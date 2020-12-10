@@ -1,0 +1,86 @@
+---
+title: "HW1_YiranSun_1025"
+author: "Yiran Sun"
+date: "10/13/2020"
+output: pdf_document
+---
+## For packages
+```{r}
+library(jsonlite)
+library(devtools)
+library(ballr)
+library(openxlsx)
+```
+
+## NASA_Astronomy Picture of the Day_APOD
+```{r}
+library(tibble)
+
+gene_APOD <- function(i){
+  URL <- paste("https://api.nasa.gov/planetary/apod?date=",date_2019[i],"&api_key=" , sep="")
+  PATH <- paste(URL,APIkey_N,sep="")
+  initial_APOD <- as.data.frame(jsonlite::fromJSON(PATH))
+  
+  checks = c("copyright","hdurl")
+  address = c("date","media_type")
+  
+  for (j in 1:length(checks)){
+      if (!checks[j] %in% colnames(initial_APOD)){
+        initial_APOD <- add_column(initial_APOD, copyright=NA, .before = address[j])
+        initial_APOD[ checks[j] ] <- as.character(initial_APOD[checks[j]])
+      }
+    }
+  return(initial_APOD)}
+
+APIkey_N  <- "dZ6ULst4xpi5OXSEMSUPZPU5PfIe9VaCC87zC9Ac"
+date_2019 <- seq(as.Date("2019-01-01"),as.Date("2019-12-31"),by=1)
+APOD_2019 <- data.frame()
+
+for (i in 1:365){
+  APOD_2019 <- rbind(APOD_2019,gene_APOD(i))}
+
+write.csv(APOD_2019,"NASA_APOD_2019 from YiranSun.csv")
+```
+Comment:
+
+This .csv document contains the astronomy pictures of everyday in 2019, also including their copyright, explanation, title, picture url and so on. To attach all these into one document, I made the format of each day's information consistent(which were not) so that I could bind them together.
+
+I think the pictures here are all very beautiful and full of imagery. Maybe a little bit more attractive to girls hhhh. But you can try to find out the Astronomy Picture on your Birthday, read through its explanation and maybe explore more into it. I am sure you will find it really interesting. ^_^
+
+
+## Ballr - mock API - NBA 
+```{r}
+
+OUT <- createWorkbook()
+list1 <- c("Center","PointGuard","ShootingGuard","SmallForward","PowerForward")
+for (i in 1:5){
+  addWorksheet(OUT,list1[i])}
+
+All <- NBAPerGameAdvStatistics(2020)
+
+Center <- All[All$pos == "C",]
+Center <- Center[order(Center$age),]
+writeData(OUT, sheet = "Center", Center)
+
+PointGuard <- All[All$pos == "PG",]
+PointGuard <- PointGuard[order(PointGuard$age),]
+writeData(OUT, sheet = "PointGuard", PointGuard)
+
+ShootingGuard <- All[All$pos == "SG",]
+ShootingGuard <- ShootingGuard[order(ShootingGuard$age),]
+writeData(OUT, sheet = "ShootingGuard", ShootingGuard)
+
+SmallForward <- All[All$pos == "SF",]
+SmallForward <- SmallForward[order(SmallForward$age),]
+writeData(OUT, sheet = "SmallForward", SmallForward)
+
+PowerForward <- All[All$pos == "PF",]
+PowerForward <- PowerForward[order(PowerForward$age),]
+writeData(OUT, sheet = "PowerForward", PowerForward)
+
+saveWorkbook(OUT,"NBAStatByPos_YiranSun.xlsx")
+```
+Comment:
+
+We divide the players into 5 groups by their playing position and reorder them by their age. So we can make some comparison and regression on their age and performance to see if their experience or age has relationship with their performance.
+
