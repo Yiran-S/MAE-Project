@@ -1,0 +1,1074 @@
+---
+title: "Project 2"
+author:
+- Li, Mingyuan(105180986)
+- Li, Xiuqi(605638474)
+- Sun, Yiran(905629996)
+- Yang, Zixin(405632963)
+date: "12/7/2020"
+output: 
+  rmarkdown::html_document:
+    theme: paper
+    df_print: paged
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: Black;
+  text-align: center;
+}
+
+h4.author { /* Header 4 - and the author and data headers use this too  */
+  font-size: 20px;
+  font-family: "Times New Roman", Times, serif;
+  color: Black;
+  text-align: center;
+}
+
+h4.date { /* Header 4 - and the author and data headers use this too  */
+  font-size: 18px;
+  font-family: "Times New Roman", Times, serif;
+  color: Gray;
+  text-align: center;
+}
+
+body { 
+  font-size: 14pt;
+  font-family: "Times New Roman", Times, serif;
+}
+
+</style>
+---
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+#library
+library(quantmod)
+library(tseries)
+library(forecast)
+library(latticeExtra)
+library(readxl)
+library(vars) #VARselect
+library(cusum)
+library(strucchange)
+library(bootstrap) #theme
+```
+# Introduction
+
+  As the world economy gradually globalizes, the economies of various countries have become closely linked. The international  trading across the world connects different countries economy merge together. The global division of industry divides different countries with different industrial power focusing on specific producing filed. This leads to some unexpected effects that government need to consider, such as the unbalance between higher consumption and the additional employments with inefficient industry. Import products from countries with less cost could improve the life quality of citizens, but the GDP as well as a part of consumption would rely on export. If a country import huge goods out of helping citizens for a good life, this may cause unexpected effect on the labor market. As a result, we want to study the relationship between the employment rate and the imports from a primary trading country from 2010 to 2020. 
+  
+  
+  We want to find out the interrelation between import from a primary trading country and the employment rate in U.S. Verifying the seasonality, trend, and cycles between those two variables can help us exploring the factors that decide the employment rate. We also want to fit the forecasting model with seasonality, trend, and cycles. Then make predictions on future values. Intuitively, import will decrease the production of the importing country. Thus, cause a decreasing employment rate. In this research, we will continue to explore the relationship between the employment rate and import. Then, interpret our data with a developed theory, and build a forecasting model. 
+
+
+  For our original time-series data, we have two monthly time-series data sets, both ranging from January 2010 to December 2019. The first data sets contain the employment rate from people aged from 15 to 64 in the United States.  We label this data as **Employment Rate**. The second data set contains U.S. Imports of Goods by Customs Basis from China. We label this data **Import** as (IMPCH). Both of the data are retrieved from FRED.
+
+
+# Modeling and Forecasting
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Read the data into data file
+EMP <- read.csv("ERATE.csv",header=TRUE)
+#Transform to time-series data
+EMP_ts <- ts(EMP[,2],start=c(2010,1),frequency=12)
+#Read the data into data file
+IMP<- read.csv("IMPCH.csv",header=TRUE)
+#Transform to time-series data
+IMP_ts <- ts(IMP[,2],start=c(2010,1),frequency=12)
+
+#Construct time variable
+t<-seq(2010, 2020,length=length(IMP_ts))
+```
+
+
+
+## A. Produce a time-series plot of your data including the respective ACF and PACF plots.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Time-series Plot
+par(mfrow=c(1,2))
+plot(EMP_ts,xlab='Time', ylab="Employment Rate for the U.S.", lwd=2)
+plot(IMP_ts,xlab='Time', ylab="U.S. Imports of Goods from China", lwd=2)
+```
+
+From the plots above, we can find out both of the data sets may exist trend and seasonality.
+
+We will verify our suppose in the future steps.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Decompose seasonal effect
+plot(stl(EMP_ts,s.window = "periodic"),main="STL for Employment Rate")
+plot(stl(IMP_ts,s.window = "periodic"),main="STL for Import")
+```
+
+Decomposing our data set, the employment Rate(EMP_ts) exists obvious seasonality and trend in the STL plot, from the trend and the seasonal part in the plot. The trend looks like linear or quadratic.
+
+For Imports (IMP_ts), it exists obvious seasonality and trend in the STL plot, from the trend and the seasonal part in the plot. The trend for this plot seems like a quadratic trend.
+
+
+### 1. ACF & PACF Plot for Employment Rate
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot ACF and PCAF for employment
+par(mfrow=c(1,2))
+acf(EMP_ts, type = "correlation", main="Autocorrelation",lag.max=60,ylab="ACF") 
+acf(EMP_ts, type = "partial",main="Partial Autocorrelation",lag.max=60, ylab="PACF") 
+```
+
+Based on the graphs, ACF shows that our data set from employment rate exists a higher auto-correlation, so we need to consider the AR coefficient into our time series regression. At the same time, the PACF verifies our guess of a linear or quadratic trend. It also suggests that there may exist seasonality in the employment rate. The PACF plot above shows that the lag of seasonality in time series regression is 12.
+
+According to the strong spikes in PACF plot, we can find out the appropriate model for the data is AR(3) or AR(2).
+
+Further test is needed to better interpret our data. So the first-difference method will be used to examine our data.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#First-difference
+plot(diff(EMP_ts),xlab='Time', ylab="Diff(Employment Rate for the U.S.)", lwd=2)
+abline(h=0,col="red") 
+```
+
+From the first-difference plot, we can find out the data is mean reverse.
+
+The first difference of our data suggests the exist of stationary. Further test is needed to check on the stationary.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#ADF Test for stationary
+adf.test(diff(EMP_ts),k=22)
+```
+
+In this test, null hypothesis (H0) is the data is non-stationary. The ADF test has a p-value of 0.01, which suggest the H0 need to be rejected. As a result, the data is stationary at first difference. This means that if the removing the trend from the employment rate data, stationary can be explored.
+
+
+### 2. ACF & PACF Plot for IMP
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot ACF and PCAF for imports
+par(mfrow=c(1,2))
+acf(IMP_ts, type = "correlation", main="Autocorrelation",lag.max=40,ylab="ACF") 
+acf(IMP_ts, type = "partial",main="Partial Autocorrelation",lag.max=40, ylab="PACF") 
+```
+
+Based on the graph, ACF mentions that our data set from employment rate exists a higher auto-correlation. The AR coefficient will be taking for account in the time series regression. At the same time, the PACF verifies our guess, that there may exist seasonality in the imports. It also suggests that the lag of seasonality in AR&MA is 12. This means our data is periodic by year.
+
+According to the strong spikes in PACF plot, we can find out the appropriate model for the data is AR(1) or AR(2).
+
+Further test is needed to better interpret our data. So we try to take first-difference to see if it could become stationary.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#First-difference
+plot(diff(IMP_ts),xlab='Time', ylab="Diff(U.S. Imports of Goods from China)", lwd=2)
+abline(h=0,col="red") 
+```
+
+From the first-difference plot, we can find out the data is mean reverse. Besides, the mean reversion is not very fast due to the small coefficient of MA (theta). Further test is needed to check on the stationary.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#ADF Test for stationarity
+adf.test(diff(IMP_ts),k=10)
+```
+
+
+From the ADF test we can conclude that our data first difference is stationary. In this test, null hypothesis (H0) is the data is non-stationary. The ADF test has a p-value of 0.01, which suggest the H0 need to be rejected. As a result, the data is stationary at first difference. This means that if the removing the trend from the employment rate data, stationary can be explored.
+
+
+
+
+## B. As a baseline model, fit an ARIMA model to each series and comment on the fit. 
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Use auto.arima to fit the model
+EMP.fit=auto.arima(EMP_ts)
+summary(EMP.fit)
+```
+
+Based on the auto.arima function, the result suggests that We should include one AR variable, one MA variable and two S-MA variables, under the first difference method. AR(1) explores that the result from t-1 will effect the result of next period. MA(1) show that the correlation only exist in t and t-1. The coefficient of AR is 0.5252 with 0.1962 standard error. The coefficient of MA is -0.7447 with 0.1526 standard error. The coefficient of S-MA1 is -0.8042 with 0.1114 standard error. For S-MA2 the coefficient is -0.2075 with 0.1143 standard error. 
+
+All the results of the error matrix is pretty small compared with the level of our data set. This means the ARIMA function created a efficient model. 
+
+
+### 2. For U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Use auto.arima to fit
+IMP.fit=auto.arima(IMP_ts)
+summary(IMP.fit)
+```
+
+Based on the auto.arima function, the result suggests that We should include two AR variables, one S-MA variables, under the first difference. AR(2) shows that the result from t-2 will effect the result of the next two periods. The coefficient of AR-1 is -0.5583 with 0.0959 standard error. The coefficient of AR-2 is -0.3071 with 0.0952 standard error. The coefficient of S-MA1 is -0.8199 with 0.1305 standard error.
+
+All the results of the error matrix is pretty small compared with the level of our data set. This means the ARIMA function created a efficient model. 
+
+
+
+## C. Fit a model that includes trend, seasonality and cyclical components. 
+### 1. For Employment Rate for the U.S.
+
+Looking at the STL plot, there seems like a quadratic trend. Therefore, we choose to fit a quadratic model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 1. Fit a Model with Quadratic trend
+
+EMP.1 <- lm(EMP_ts~t+I(t^2))
+
+#plot the model with a fit line
+par(mfrow=c(2,1))
+plot(EMP_ts,ylab="Employment Rate for the U.S.", xlab="Time", lwd=2, col='skyblue3')
+lines(t,EMP.1$fit,col="red3",lwd=2)
+
+#plot residual graph
+plot(t,EMP.1$res, ylab="Residuals",type='l',xlab="Time") 
+```
+
+From the first plot, the quadratic trend basically fit the data, shows that the quadratic trend model (EMP.1) is ideal.
+
+The residual plot shows the residuals has certain patterns, suggesting there exists seasonality or cycles in the employment data.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Plot ACF and PACF for residuals
+par(mfrow=c(2,1))
+acf(EMP.1$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(EMP.1$res,lag=50,main="Residual Sample Partial Autocorrelations", 
+     xlab="Displacement")
+```
+
+After the elimination of trend in the data, the plots still suggest the existence of auto-correlation in residual. Especially, we can figure out that the residuals have higher seasonality. Further test is needed to analyze the data and optimize model.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Check in our model
+par(mfrow=c(1,2))
+acf(diff(EMP_ts,12),lag=80,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(diff(EMP_ts,12),lag=80,main="Residual Sample Partial Autocorrelations", 
+     xlab="Displacement")
+```
+
+In the original data ACF and PACF plot, the data shows a weakly dependence after eliminating the trend compared with the original data. Based on the steps above, the EMP model is efficient at this point. However, the plot still shows other potential questions. Maybe some other problem caused by seasonality. However, after taking 12 difference, the plots shouldn't have shown seasonality. So further steps are needed to optimize our model.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 2. Fit a Model with Quadratic Trend and Seasonality
+
+EMP.2 <- tslm(EMP_ts~t+I(t^2)+season+0)
+
+#plot EMP_ts and fit it with EMP.2
+par(mfrow=c(2,1))
+plot(EMP_ts,ylab="Employment Rate for the U.S.", xlab="Time", lwd=2, col='skyblue3')
+lines(t,EMP.2$fit,col="red3",lwd=2,lty=2)
+
+#plot the residual graph for EMP.2
+plot(t,EMP.2$res, ylab="Residuals",type='l',xlab="Time",lwd=2)
+```
+
+In this step, quadratic Trend and seasonality are fitted in the time series model. The plot of Residuals has a narrow range at this model compared with the residuals plot of previous one. The model is optimized by adding the seasonality factor. The fit plot is better than the former one. However, there might still be some patterns masked in the data. This might be caused by the cycles. Further steps are needed to optimize our model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Plot the ACF and PACF for EMP.2's residual
+par(mfrow=c(2,1))
+acf(EMP.2$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(EMP.2$res,lag=50,main="Residual Sample Partial Autocorrelations", 
+     xlab="Displacement")
+```
+
+From the ACF and PACF plots under our quadratic trend and seasonality model, the data has a more evident weakly dependent relationship. The next step is to compare the ACF and PACF plot with the former one. The model is optimized by adding the seasonality factor.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 3. Fit a Model with Seasonality and Cycles
+
+EMP.3 <- arima(EMP_ts,order=c(1,0,1),seasonal=list(order=c(0,0,2)))
+
+#plot EMP_ts and fit it with EMP.3
+par(mfrow=c(2,1))
+plot(EMP_ts,ylab="Employment Rate for the U.S.", xlab="Time", lwd=2, col='skyblue3')
+lines(fitted(EMP.3),col="red3",lwd=2,lty=2)
+
+#plot the residual plot for EMP.3
+plot(t,EMP.3$res, ylab="Residuals",type='l',xlab="Time",lwd=2)
+```
+
+The EMP.3 model includes seasonality and cycles. The residuals plot has a more random pattern, compared with EMP.2 model. The fit plot is better than the former one. The model is improved. Further steps are needed to optimize our model. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Look at the ACF and PACF for EMP.3S' residual plots
+par(mfrow=c(2,1))
+acf(EMP.3$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(EMP.3$res,lag=50,main="Residual Sample Partial Autocorrelations", 
+     xlab="Displacement")
+```
+
+From the ACF and PACF plot under our model with seasonality and cycles, we figure out the residual plots almost has no dependent relationship, compared with the former ACF and PACF residual plot. This shows the model improved.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 4. Fit a Model with Quadratic Trend, Seasonality and Cycle 
+
+EMP.4 <- Arima(EMP_ts,order=c(1,0,1),xreg = cbind(t, I(t^2)),
+            seasonal=list(order=c(0,0,2)) , include.mean=FALSE)
+
+#plot EMP.4 with the fitted line
+par(mfrow=c(2,1))
+plot(EMP_ts,ylab="Employment Rate for the U.S.", xlab="Time", lwd=2, col='skyblue3')
+lines(fitted(EMP.4),col="red3",lwd=2,lty=2)
+
+#plot the residual plot of EMP.4
+plot(t,EMP.4$res, ylab="Residuals",type='l',xlab="Time",lwd=2)
+```
+
+In our EMP.4 model, all factors are included, specifically, quadratic trend, seasonality and cycles. Although the graph doesn't have too much improvements compare with the EMP.3, this will still be chosen, because the ACF and PACF plot of residual shows some improvement.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Look at the ACF and PACF of residual plots of EMP.4
+par(mfrow=c(2,1))
+acf(EMP.4$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(EMP.4$res,lag=50,main="Residual Sample Partial Autocorrelations", 
+     xlab="Displacement")
+```
+
+Based on the ACF and PACF plots, the significance of lag become smaller, compared with the EMP.3. The decreasing of the significance of lag at EMP.4 determines the model is improved by adding the trend factor. 
+
+We can also take a look at AIC and BIC. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Look at AIC and BIC
+AIC(EMP.3,EMP.4)
+BIC(EMP.3,EMP.4)
+```
+
+From AIC and BIC we can see that model 4 has smaller value than model 3. Both of fit plot and residual plot prove the model is efficient under the time series regression. The EMP.4 model will be used in further steps. 
+
+
+### 2. For U.S. Imports of Goods from China
+
+Looking at the STL plot, there seems like a quadratic trend, so we choose to fit a quadratic model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 1. Fit a Model with Quadratic trend
+
+IMP.1 <- lm(IMP_ts~t+I(t^2))
+
+#Plot the IMP_ts with a fitted line
+par(mfrow=c(2,1))
+plot(IMP_ts,ylab="U.S. Imports of Goods from China", xlab="Time", lwd=2, col='skyblue3')
+lines(t,IMP.1$fit,col="red3",lwd=2)
+
+#Plot the residual plot of IMP.1
+plot(t,IMP.1$res, ylab="Residuals",type='l',xlab="Time") 
+```
+
+From the first plot, the quadratic trend basically fit the data, shows that the quadratic trend model (IMP.1) is ideal. The residual plot shows the residuals has certain patterns, suggesting there exist seasonality or cycles in the import data. Further steps are needed to analyze the data and optimize model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Look at Residual's ACF and PACF of IMP.1
+par(mfrow=c(2,1))
+acf(IMP.1$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(IMP.1$res,lag=50,main="Residual Sample Partial Autocorrelations", xlab="Displacement")
+```
+
+After elimination of trend in the data, the plots still suggest the existence of auto-correlation in residual.The Residuals suggests higher seasonality in the data. Further steps are needed to analyze the data and optimize model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# To check for Seasonality
+par(mfrow=c(2,1))
+acf(diff(IMP_ts,12),lag=80,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(diff(IMP_ts,12),lag=80,main="Residual Sample Partial Autocorrelations", xlab="Displacement")
+```
+
+In the original data's ACF and PACF plot, the data shows a weakly dependent after eliminating the trend compared with the original data. Based on the steps above, the EMP model is efficient at this point. However, the plot still shows other potential questions. Maybe a problem caused by seasonality and cycles. However, these factors shouldn't have been observed from the plots. Further steps are needed to optimize our model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 2. Fit a Model with Quadratic Trend and Seasonality
+
+IMP.2=tslm(IMP_ts~t+I(t^2)+season+0)
+
+#Plot the IMP_ts with a fitted line
+par(mfrow=c(2,1))
+plot(IMP_ts,ylab="U.S. Imports of Goods from China", xlab="Time", lwd=2, col='skyblue3')
+lines(t,IMP.2$fit,col="red3",lwd=2,lty=2)
+
+#Plot the residual plot of IMP.2
+plot(t,IMP.2$res, ylab="Residuals",type='l',xlab="Time",lwd=2)
+```
+
+In this step, quadratic trend and seasonality are fitted in the time series model. The plot of Residuals has a narrow range at this model compared with the Residuals plot of previous one. The model is optimized by adding the seasonality factor. The fit plot is better than the former one. However, there might still be some patterns masked in the data. This might be caused by the cycles. Further steps are needed to optimize our model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Look at the ACF and PACF for IMP.2
+par(mfrow=c(2,1))
+acf(IMP.2$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(IMP.2$res,lag=50,main="Residual Sample Partial Autocorrelations", xlab="Displacement")
+```
+
+From the ACF and PACF plots under our quadratic trend and seasonality model, the data has a more evident weakly dependent relationship. The next step is to compare the ACF and PACF plot with the former one. The model is optimized by adding the seasonality factor.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 3. Fit a Model with Seasonality and Cycle
+
+IMP.3=arima(IMP_ts,order=c(2,0,0),seasonal=list(order=c(0,0,1)))
+
+#Plot the IMP_ts with a fitted line
+par(mfrow=c(2,1))
+plot(IMP_ts,ylab="U.S. Imports of Goods from China", xlab="Time", lwd=2, col='skyblue3')
+lines(fitted(IMP.3),col="red3",lwd=2,lty=2)
+
+#Plot the residual plot of IMP.3
+plot(t,IMP.3$res, ylab="Residuals",type='l',xlab="Time",lwd=2)
+```
+
+The IMP.3 model includes seasonality and cycles. The residuals plot has a more random pattern, compared with IMP.2 model. The fit plot is better than the former one. The model is improved. Further steps are needed to optimize our model.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Look at the ACF and PACF
+par(mfrow=c(2,1))
+acf(IMP.3$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(IMP.3$res,lag=50,main="Residual Sample Partial Autocorrelations", xlab="Displacement")
+```
+
+From the ACF and PACF plot under our model with seasonality and cycles, the residual plots almost has no dependent relationship, compared with the former ACF and PACF residual plot. At the same time, the Plot shows a more weakly dependent relationship. This shows the model has been improved.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# 4. Fit a Model with Quadratic Trend, Seasonality and Cycle 
+
+IMP.4=Arima(IMP_ts,order=c(2,0,0),xreg = cbind(t, I(t^2)),
+            seasonal=list(order=c(0,0,1)),include.mean=FALSE)
+
+#Plot the IMP_ts with a fitted line
+par(mfrow=c(2,1))
+plot(IMP_ts,ylab="U.S. Imports of Goods from China", xlab="Time", lwd=2, col='skyblue3')
+lines(fitted(IMP.4),col="red3",lwd=2,lty=2)
+
+#Plot the residual plot of IMP.4
+plot(t,IMP.4$res, ylab="Residuals",type='l',xlab="Time",lwd=2)
+```
+
+
+In the EMP.4 model, all factors are included, specifically, quadratic trend, seasonality and cycles. Although the graph doesn't have too much improvements compared with the IMP.3, this will still be chosen, because the ACF and PACF plot of residual shows some improvements.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Look at the ACF and PACF
+par(mfrow=c(2,1))
+acf(IMP.4$res,lag=50,main="Residual Sample Autocorrelations",xlab="Displacement")
+pacf(IMP.4$res,lag=50,main="Residual Sample Partial Autocorrelations", xlab="Displacement")
+```
+
+Based on the ACF and PACF plots, the significance of lag become smaller, compared with the IMP.3. The decreasing of the significance of lag at IMP.4 determines the model is improved by adding the trend factor. The IMP.4 model will be used in further steps.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Look at AIC and BIC
+AIC(IMP.3,IMP.4)
+BIC(IMP.3,IMP.4)
+```
+
+From AIC we can see that model 4 has smaller value than model 3. Both of the fit plot and residual plot prove the model is efficient in time series regression. The EMP.4 model will be used in further steps.
+
+
+
+## D. Plot the respective CUSUM and interpret the plot.
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot the CUSUM test for EMP.4
+plot(efp(EMP.4$res~1, type = "Rec-CUSUM"))
+```
+
+The cumulative sums stay within the red line (95%) confidence region. This means that our data does not exist outlier. Thus, the model seems to fit the data. At the same time, the CUSUM result shows the values moving around 0 It shows the effectiveness of the model. The result shows the small offset in the data are still in the confidence level. The model can be more persuasive in the forecast process.
+
+### 2. For U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot the CUSUM test for IMP.4
+plot(efp(IMP.4$res~1, type = "Rec-CUSUM"))
+```
+
+The cumulative sums stay within the red line (95%) confidence region. This means that our data does not exist outlier. Thus, the model seems to fit the data. At the same time, the CUSUM result shows the values moving around 0 It shows the effectiveness of the model. The result shows the small offset in the data are still in the confidence level. The model can be more persuasive in the forecast process.
+
+
+
+## E. Plot the respective Recursive Residuals and interpret the plot.
+
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot the recursive residuals plot and the fitted line for EMP.4
+y1 <- recresid(EMP.4$res~1)
+plot(y1, pch=16,ylab="Recursive Residuals")
+abline(h=0,col="red")
+```
+
+Based on the plot, we can figure out the recursive residuals seems uncorrelated. The errors et are uncorrelated, given cov (et, es|xt, xs ) = 0 for t ≠ s and homoskedastic, var (et|xt)= σ^2e. This means the model is efficient under the time series regression.
+
+### 2. For U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot the recursive residuals plot and the fitted line for IMP.4
+y2 <- recresid(IMP.4$res~1)
+plot(y2, pch=16,ylab="Recursive Residuals")
+abline(h=0,col="red")
+```
+
+Base on the recursive residual plot, we can figure out that the assumption of the different time's residuals are uncorrelated, which means the model is efficient under the time series regression. Although there's some outliers, they don't violate the general assumption of the time series regression.
+
+
+
+## F. Discuss the associated diagnostic statistics.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Look at the statistic data of EMP.4
+summary(EMP.4)
+```
+
+According to the result from EMP.4, the result suggests that the existence of AR(1), MA(1), two S-MA variables, and also with a trend variable. 
+
+AR1 explores that the result from t-1 will effect the result of next period. The coefficient of AR is AR(1) 0.7069 with 0.0578 standard error. MA1 explores that the error of close two period have relationship. The one coefficient of MA(1) is 0.1332 with 0.0858 standard error. The two coefficient of S-MA is S-MA(1) 0.5383 with 0.0816 standard error and S-MA(2) 0.5515 with 0.0824 standard error. The trend coefficient is t with -0.4682 and 0.0373 standard error.
+
+All the results of the error matrix is pretty small, compared with the level of the data set. This means the ARIMA function created a efficient model. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Look at the statistic data of IMP.4
+summary(IMP.4)
+```
+
+According to the result from IMP.4, it suggests that two AR variables, one S-MA variables, and also one trend variable should be include. 
+
+AR(2) explores that the result from t-2 will effect the result of next two period. The two coefficient of AR is AR(1) 0.6961 with 0.0996 standard error, and AR(2) 0.0579 with 0.1020 standard error. The one coefficient of SMA(1) is 0.4599 with 0.1031 standard error. The trend coefficient is t with -969.2728 and 425.8409 standard error. For t^2, the coefficient is 0.4901 with standard error 0.2113.
+
+All the results of the error matrix is pretty small, compared with the level of the data set. This means the ARIMA function create a efficient model. 
+
+
+
+## G. Forecast 12-steps ahead
+
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Plot the forecast for employment with EMP.4
+tpred <- seq(2020.16, 2021.16,length=12)
+plot(forecast(EMP.4,xreg=cbind(tpred,I(tpred^2))),shadecols="oldstyle")
+```
+
+From the plot above, the respective error bands of 95% (orange) and 80% (yellow) confidence interval are all included.
+
+### 2. For U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Plot the forecast for import with IMP.4
+tpred <- seq(2020.16, 2021.16,length=12)
+plot(forecast(IMP.4,xreg=cbind(tpred,I(tpred^2))),shadecols="oldstyle")
+```
+
+From the plot above, the respective error bands of 95% (orange) and 80% (yellow) confidence interval are all included. 
+
+
+
+## H. Fit an appropriate VAR model using your two variables.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Plot EMP_ts and IMP_ts in the same graph
+obj1 <- xyplot(EMP_ts, type = "l" , lwd=1, col="steelblue",
+               ylab="Employment Rate")
+obj2 <- xyplot(IMP_ts, type = "l", lwd=1, col="black", 
+               ylab="U.S. Imports of Goods from China")
+doubleYScale(obj1, obj2, add.ylab2 = TRUE, use.style=FALSE,
+             text=c("Employment Rate","Imports from China"),
+             col=c("steelblue","black") ,lines=F)
+```
+
+The plot shows that the employment rate and the imports from China has similar trend and seasonal fluctuation.
+
+Also, the response of the employment rate looks have a little of lag compare with the imports. The relationship between variables in the future steps. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Plot CCF of EMP_ts and IMP_ts
+ccf(EMP_ts,IMP_ts)
+```
+
+The CCF plot shows the max spike appears at around lag 13, not peaked at the 0 value. This means employment rate and imports exist a relationship. It also shows the influence at current period is not the strongest. There is an important lag between the data, which is what we expected.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Fit a VAR model
+y.ts <- ts.union(EMP_ts,IMP_ts)
+VARselect(y.ts,lag.max=15)
+```
+
+The VAR test criteria gives us the same answer of 13. Thus, we choose 13 as lag order.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Build a VAR model with lag order
+y_model <- VAR(y.ts, p=13)
+
+# Discuss the result.
+summary(y_model)
+```
+
+Reviewing the result from our VAR model, there are several interest things that we can interpret. First, there are 9 significant variables for the VAR model that employment rate as the dependent variable. 
+
+These variables are employment rate of lag 1, employment rate of lag 2 , employment rate of lag 7, employment rate of lag 8, employment rate of lag 12 and employment rate of lag 13 and imports of lag 1, imports of lag 12 and imports of lag 13. 
+
+The coefficients of the employment rate of lags is 9.518e-01 with standard error 1.067e-01 for employment rate of lag 1;
+-3.136e-01 with standard error 1.404e-01 for employment rate of lag 2; 2.917e-01 with standard error 1.175e-01 for employment rate of lag 7; -2.491e-01 with standard error 1.226e-01 for employment rate of lag 8; 2.976e-01 with standard error 1.186e-01 for employment rate of lag 12; -2.728e-01 with standard error 9.555e-02 for employment rate of lag 13. 
+
+The coefficients of the imports of lags is 2.408e-05 with standard error 8.454e-06 for imports of lag 1; -3.541e-05 with standard error 9.815e-06 for imports of lag 12; 2.660e-05 with standard error 1.005e-05 for imports of lag 13. 
+
+The VAR model of employment rate as dependent variable exist several both imports and employment lag explanatory variables. **This means that imports could explain how the employment rate change. **
+
+Second, when we go back to check the VAR model that imports as the dependent variable. We can figure out there are 6 significant variables. These variables are imports of lag 1, imports of lag 2 , imports of lag 10, imports of lag 11, imports of lag 13 and employment rate of lag 9. 
+
+The coefficients of the imports of lags is 4.125e-01 with standard error 1.080e-01 for imports of lags 1, 4.021e-01 with standard error 1.254e-01 for imports of lags 2, 2.515e-01 with standard error 1.241e-01 for imports of lags 10, 3.540e-01 with standard error 1.257e-011 for imports of lags 11, -4.690e-01 with standard error 1.284e-01 for imports of lags 13. 
+
+The coefficient is -4.698e+03 with standard error 1.545e+03 for employment rate of lag 9. 
+
+The VAR model of imports as dependent variable only shows 1 lag of employment rate explanatory variable. **This means that imports could not be explained by the employment rate change.** The reason is there is only one lag is significant and this lag variable exist at very early time period. 
+
+We should focus on the interrelations between the EMP and IMP, which means we should find the statistical significant effect on the interrelation term. For example, the EMP_ts.lag 9(-) on estimation results for equation IMP_ts, and the IMP_ts.lag 1(+), 12(-), and 13(+) on estimation results for equation EMP_ts.
+
+Third, if we sum all the coefficients of the imports lag variables at VAR model that employment rate as the dependent variable. We will discover that this sum give us a **positive** sum value. 
+
+Based on the empirical economic theory, the imports reduce the labor demand, so it will cause a lower employment rate. However, we get a contradictory result from the empirical economic theory. One of the possible explanations is **both of import and employment rate connect with the economic well-being of a country**. From the Macroeconomics, we know a country's imports will increase when a country's GDP is increasing. Our time series data are start from 2010 until 2020. These ten years are the recover time of US economy to revive from the 2008 Financial Crisis, and a booming economy has higher labor demand to producing the goods. This may be the reason why the trend of imports is positive and employment rate continues to growing. For these reasons, the increasing of import doesn't crush the labor demand, but boosts the labor market.
+
+Finally, we can conclude the increasing of employment rate and imports may come from the increasing of US economy. The imports from China will not occupied the labor position, but will boost the employment of the America. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#graph the VAR model with lag order
+plot(y_model)
+```
+
+Looking at the plot, we can see that the fit line for EMP is much better for the fit line for IMP, indicating that the model explains EMP better.
+
+### Residual Plot for EMP
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Plot the residual plot for EMP
+tsdisplay(residuals(y_model)[,1],main ="EMP = EMP(t-k) + IMP(t-k)")
+```
+
+The residual plot shows the residuals of employment rate as dependent variable exists random pattern. At the same time, the ACF and PACF plot shows the higher lag has effect on the employment rate. This means our model is efficient.
+
+### Residual Plot for IMP
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+tsdisplay(residuals(y_model)[,2],main ="IMP = IMP(t-k) + EMP(t-k)")
+```
+
+The residual plot shows the residuals of imports as dependent variable exist random pattern. However, the ACF and PACF plot shows no lag has effect on the imports. This shows the model is efficient, but can't be explained by the explanatory variable.
+
+
+
+## I. Compute, plot, and interpret the respective impulse response functions.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Build the impulse response function
+irf(y_model)
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot the irf model
+value <- irf(y_model,n.ahead=36)
+
+Shock.EMP <- value$irf[1][[1]]
+Shock.EMP.LB <- value$Lower[1][[1]]
+Shock.EMP.UP <- value$Upper[1][[1]]
+
+Shock.IMP <- value$irf[2][[1]]
+Shock.IMP.LB <- value$Lower[2][[1]]
+Shock.IMP.UP <- value$Upper[2][[1]]
+
+par(mfrow=c(2,2))
+plot(1:37,Shock.EMP[,1],type="l",ylim=c(-0.05,0.2),ylab="EMP",
+     xlab="Forecast 36 periods",main="Shock from EMP")
+lines(Shock.EMP.LB[,1],col="red",lty=2)
+lines(Shock.EMP.UP[,1],col="red",lty=2)
+abline(h=0,col="steelblue",lty=2)
+
+plot(1:37,Shock.EMP[,2],type="l",ylim=c(-1000,1000),ylab="IMP",
+     xlab="Forecast 36 periods",main="Shock from EMP")
+lines(Shock.EMP.LB[,2],col="red",lty=2)
+lines(Shock.EMP.UP[,2],col="red",lty=2)
+abline(h=0,col="steelblue",lty=2)
+
+plot(1:37,Shock.IMP[,1],type="l",ylim=c(-0.1,0.15),ylab="EMP",
+     xlab="Forecast 36 periods",main="Shock from IMP")
+lines(Shock.IMP.LB[,1],col="red",lty=2)
+lines(Shock.IMP.UP[,1],col="red",lty=2)
+abline(h=0,col="steelblue",lty=2)
+
+plot(1:37,Shock.IMP[,2],type="l",ylim=c(-1000,2500),ylab="IMP",
+     xlab="Forecast 36 periods",main="Shock from IMP")
+lines(Shock.IMP.LB[,2],col="red",lty=2)
+lines(Shock.IMP.UP[,2],col="red",lty=2)
+abline(h=0,col="steelblue",lty=2)
+```
+
+The shock from the employment rate does not have a lot of effects on the imports and employment rate. From the top two graph, the shock from employment rate lead imports, and it has the periodic fluctuation. As a result, the shock from employment rate appears uncorrelated relationship. The shock from imports has a huge influence on both imports and employment rate variables. 
+
+For the employment rate, the influence appear after around the 13th periods because of the lag of imports for the employment rate. The shock from imports has an immediate influence on the itself, but this influence continues to decrease through the time lapses. The shock affection goes to almost 0 after 30 periods.    
+
+
+
+## J. Perform a Granger-Causality test on your variables and discuss your results from the test.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Granger-Causality Test
+#Does Employment rate-cause Import?
+grangertest(EMP_ts~ IMP_ts, order = 13)
+
+#Does Import-cause Employment rate?
+grangertest(IMP_ts~ EMP_ts, order = 13)
+```
+
+The GC-test for the two data sets suggests that these variables could explain each other. The reason that we get this contradictory consequence is the explanatory variables in the imports VAR model may exist higher auto-correlation. This auto-correlation result is not significant when we use import as dependent variable. However, it becomes significant when we do the GC-test for both of the variables.
+
+
+
+## K. Use your VAR model to forecast 12-steps ahead.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#build the predict model
+var.predict = predict(object=y_model, n.ahead=12)
+
+#plot the model
+plot(var.predict,main=c("VAR Forecast for EMP","VAR Forecast for IMP"))
+
+#plot the Our Forecast
+par(mfrow=c(2,1))
+tp <- seq(2020,2021,length=12)
+plot(forecast(EMP.4, xreg=cbind(tp,I(tp^2))),main="Forecast 12-steps for EMP")
+plot(forecast(IMP.4, xreg=cbind(tp,I(tp^2))),main="Forecast 12-steps for IMP")
+```
+
+Both of two forecast plot shows similar result. However, the VAR forecast plot should have a better forecast with wider confidence interval because the VAR forecast method include more information by using more data.
+
+
+
+
+## L. Backtest ARIMA model.
+
+Since there are 120 observations in each data set, we decide to divide them into 2 two parts: 84 for estimation and 36 for prediction.
+
+
+### (a). Recursive Backtesting with 12 steps ahead
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 12 steps ahead
+
+EMP.MAPE1 <- vector()
+
+for (i in 1:25){
+        win.f <- ts(EMP_ts[1:(83+i)],start=c(2010,1),frequency=12)
+        win.t <- seq(2010,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(1,0,1),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,2)),include.mean = FALSE)
+        
+        tp <- seq(2017+i*0.083,2018+(i-1)*0.083,length=12)
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueEMP <- as.vector(EMP_ts[(84+i):(95+i)])
+        EMP.MAPE1[i] <- mean(abs((trueEMP-fcast.out)/trueEMP))*100
+}
+
+# Plot showing the MAPE over each iteration.
+plot(EMP.MAPE1,type="o",lwd=2, ylab="Mean Absolute Percentage Error",
+     main="Recursive Forecast MAPE for Employment Rate")
+```
+
+
+### 2. U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 12 steps ahead
+
+IMP.MAPE1 <- vector()
+
+for (i in 1:25){
+        win.f <- ts(IMP_ts[1:(83+i)],start=c(2010,1),frequency=12) 
+        win.t <- seq(2010,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(2,0,0),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,1)),include.mean=FALSE)
+        
+        tp <- seq(2017+i*0.083,2018+(i-1)*0.083,length=12)
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueIMP <- as.vector(IMP_ts[(84+i):(95+i)])
+        IMP.MAPE1[i] <- mean(abs((trueIMP-fcast.out)/trueIMP))*100
+}
+
+# Plot showing the MAPE over each iteration.
+plot(IMP.MAPE1,type="o", lwd=2,ylab="Mean Absolute Percentage Error",
+     main="Recursive Forecast MAPE for U.S. Import")
+```
+
+
+
+### (b). Recursive Backtesting with 1 step ahead
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 1 step ahead and plot the APE over each iteration.
+
+EMP.APE1 <- vector()
+
+for (i in 1:36){
+        win.f <- ts(EMP_ts[1:(83+i)],start=c(2010,1),frequency=12)
+        win.t <- seq(2010,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(1,0,1),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,2)),include.mean = FALSE)
+        
+        tp <- 2017+i*0.083
+        
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueEMP <- as.vector(EMP_ts[84+i])
+        EMP.APE1[i] <- abs((trueEMP-fcast.out)/trueEMP)*100
+}
+
+plot(EMP.APE1,type="o",lwd=2,xlab="Time", ylab="Absolute Percentage Error",
+     main="Recursive Forecast APE for Employment Rate")
+```
+
+
+### 2. U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 1 step ahead and plot the APE over each iteration.
+
+IMP.APE1 <- vector()
+
+for (i in 1:36){
+        win.f <- ts(IMP_ts[1:(83+i)],start=c(2010,1),frequency=12) 
+        win.t <- seq(2010,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(2,0,0),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,1)),include.mean=FALSE)
+        
+        tp <- 2017+i*0.083
+        
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueIMP <- as.vector(IMP_ts[84+i])
+        IMP.APE1[i] <- abs((trueIMP-fcast.out)/trueIMP)*100
+}
+
+plot(IMP.APE1,type="o",lwd=2,xlab="Time", ylab="Absolute Percentage Error",
+     main="Recursive Forecast APE for U.S. Import")
+```
+
+
+
+### (c) Does your model perform better at longer or shorter horizon forecasts?
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+par(mfrow=c(2,1))
+plot(window(EMP.fit$residuals,start=c(2017,1)),ylab="Residual",main="ARIMA Model")
+
+plot(EMP.APE1,type="o",lwd=2,xlab="Time", ylab="MAPE/APE",
+     main="Recursive Forecast of Short and Long Period for Employment Rate")
+lines(EMP.MAPE1,col="red",lwd=2)
+```
+
+
+### 2. U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+par(mfrow=c(2,1))
+plot(window(IMP.fit$residuals,start=c(2017,1)),ylab="Residual",
+     main="ARIMA Model for Imports")
+
+plot(IMP.APE1,type="o", lwd=2, ylab="MAPE/APE", ylim=c(0,15),
+     main="Recursive Forecast of Short and Long Period for U.S. Import")
+lines(IMP.MAPE1,col="red",lwd=2)
+```
+
+
+Comparing the error with the real error from our model, we can figure out that **the short horizon perform a better forecast than the longer horizon**. 
+
+The reason is forecasting on the longer horizon will cause a higher variance and higher error. This higher variance will lead to a higher forecast variance. Consequently, the forecast confidence interval of a long horizon is bigger. The method of MAPE uses 12 period and then get the mean of this 12 period as the first predict estimate value. This method has a much wider forecast period than the APE method which is one predict 1 period at a time. Because the variance of a long horizon forecast is bigger, the volatility is much larger than the variance of a short horizon forecast with only one period. As a result, we can see the result of short horizon forecast better fit to our conclusion. 
+
+
+
+### (d). Moving window Backtesting
+### 1. For Employment Rate for the U.S.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Forecast with 12 steps ahead
+
+EMP.MAPE2 <- vector()
+
+for (i in 1:25){
+        win.f <- ts(EMP_ts[i:(83+i)],start=c(2010,0)+c(i%/%12,i%%12),frequency=12) 
+        win.t <- seq(2010+(i-1)*0.083,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(1,0,1),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,2)),include.mean = FALSE)
+        
+        tp <- seq(2017+i*0.083,2018+(i-1)*0.083,length=12)
+        
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueEMP <- as.vector(EMP_ts[(84+i):(95+i)])
+        EMP.MAPE2[i] <- mean(abs((trueEMP-fcast.out)/trueEMP))*100
+}
+
+# Plot showing the MAPE over each iteration.
+plot(EMP.MAPE2,type="o",lwd=2,ylab="Mean Absolute Percentage Error",
+     main="Rolling Forecast MAPE for Employment Rate")
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 1 step ahead
+
+EMP.APE2 <- vector()
+
+for (i in 1:36){
+        win.f <- ts(EMP_ts[i:(83+i)],start=c(2010,0)+c(i%/%12,i%%12),frequency=12) 
+        win.t <- seq(2010+(i-1)*0.083,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(1,0,1),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,2)),include.mean = FALSE)
+        
+        tp <- 2017+i*0.083
+        
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueEMP <- as.vector(EMP_ts[(84+i)])
+        EMP.APE2[i] <- abs((trueEMP-fcast.out)/trueEMP)*100
+}
+
+# Plot showing the MAPE over each iteration.
+plot(EMP.APE2,type="o",lwd=2,xlab="Time", ylab="Absolute Percentage Error",
+     main="Rolling Forecast APE for Employment Rate")
+```
+
+
+### 2. For U.S. Imports of Goods from China
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 12 steps ahead
+
+IMP.MAPE2 <- vector()
+
+for (i in 1:25){
+        win.f <- ts(IMP_ts[i:(83+i)],start=c(2010,0)+c(i%/%12,i%%12),frequency=12) 
+        win.t <- seq(2010+(i-1)*0.083,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(2,0,0),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,1)),include.mean=FALSE)
+        
+        tp <- seq(2017+i*0.083,2018+(i-1)*0.083,length=12)
+        
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueIMP <- as.vector(IMP_ts[(84+i):(95+i)])
+        IMP.MAPE2[i] <- mean(abs((trueIMP-fcast.out)/trueIMP))*100
+}
+
+# Plot showing the MAPE over each iteration.
+plot(IMP.MAPE2,type="o",lwd=2, ylab="Mean Absolute Percentage Error",
+     main="Rolling Forecast MAPE for U.S. Import")
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Forecast with 1 step ahead
+
+IMP.APE2 <- vector()
+
+for (i in 1:36){
+        win.f <- ts(IMP_ts[i:(83+i)],start=c(2010,0)+c(i%/%12,i%%12),frequency=12) 
+        win.t <- seq(2010+(i-1)*0.083,2017+(i-1)*0.083,length=length(win.f))
+        fcast.model <- Arima(win.f,order=c(2,0,0),xreg = cbind(win.t, I(win.t^2)),
+                             seasonal=list(order=c(0,0,1)),include.mean=FALSE)
+        
+        tp <- 2017+i*0.083
+         
+        fcast.out <- as.vector(as.data.frame(forecast(
+          fcast.model,xreg=cbind(tp,I(tp^2))))[,2])
+        
+        trueIMP <- as.vector(IMP_ts[84+i])
+        IMP.APE2[i] <- abs((trueIMP-fcast.out)/trueIMP)*100
+}
+
+# Plot showing the MAPE over each iteration.
+plot(IMP.APE2,type="o",lwd=2,xlab="Time", ylab="Absolute Percentage Error",
+     main="Rolling Forecast APE for U.S. Import")
+```
+
+### Comparing long and short horizon forecasts
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# For Employment
+par(mfrow=c(2,1))
+plot(window(EMP.fit$residuals,start=c(2017,1)),ylab="Residual",main="ARIMA Model")
+
+plot(EMP.APE2,type="o",lwd=2,xlab="Time", ylab="MAPE/APE",
+     main="Rolling Forecast of Short and Long Period for Employment Rate")
+lines(EMP.MAPE2,col="red",lwd=2)
+
+# For Imports
+par(mfrow=c(2,1))
+plot(window(IMP.fit$residuals,start=c(2017,1)),ylab="Residual",
+     main="ARIMA Model for Imports")
+
+plot(IMP.APE2,type="o", lwd=2, ylab="MAPE/APE", ylim=c(0,15),
+     main="Rolling Forecast of Short and Long Period for U.S. Import")
+lines(IMP.MAPE2,col="red",lwd=2)
+
+```
+
+The moving window back testing scheme has similar plot shape with the recursive back testing scheme plot. The value of MAPE fluctuate through time, and has a trend of gradually decreasing. Therefore, the forecast accuracy is higher as the time passes. In this plot shows no priority between the moving window and the recursive scheme.
+
+
+
+### (e) Compare the errors found using a recursive backtesting scheme with the errors observed using a moving average backtesting scheme.
+
+From above, we can know the error term EMP.MAPE1, EMP.APE1, IMP.MAPE1 and IMP.APE1 are generated from recursive back testing scheme. 
+And EMP.MAPE2, EMP.APE2, IMP.MAPE2 and IMP.APE2 are generated from moving average back testing scheme.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#plot MAPE for the two scheme model
+par(mfrow=c(2,2))
+plot(EMP.MAPE1,type="o",lwd=2,col="black", ylim=c(0.25,1.5), ylab="MAPE",
+     main="Forecast 12-steps with 2 schemes for EMP")
+lines(EMP.MAPE2,type="o",lwd=2,col="red")
+
+plot(EMP.APE1,type="o",lwd=2,col="black",xlab="Time", ylab="APE",
+     main="Forecast 1-step with 2 schemes for EMP")
+lines(EMP.APE2,type="o",lwd=2,col="red")
+
+plot(IMP.MAPE1,type="o",lwd=2,col="black",ylab="MAPE",
+     main="Forecast 12-steps with 2 schemes for IMP")
+lines(IMP.MAPE2,type="o",lwd=2,col="red")
+legend("bottomleft",c("Recursive","Rolling"),text.col=c("black","red"),cex = 0.7)
+
+plot(IMP.APE1,type="o",lwd=2,col="black",xlab="Time", ylab="APE",
+     main="Forecast 1-step with 2 schemes for IMP")
+lines(IMP.APE2,type="o",lwd=2,col="red")
+
+```
+
+Based on the top two plot, we can figure out that the Rolling scheme actually works better than the Recursive scheme. The reason is the red line generally is below the black line at later period, which is under longer horizon. This means overall, the Rolling scheme has smaller error than the Recursive scheme has. 
+
+The bottom right plot is hard to distinguish which scheme is better from the overall error. But the bottom left plot shows that the recursive backtesting scheme works better at early periods, and the moving average backtesting scheme works better than the recursive backtesting scheme after the intercept point, which is because the moving average back testing scheme has a small error. 
+
+Overall, the Moving average(Rolling) scheme performs better than the Recursive scheme. This conclusion means that the lags of our best model are limited, and we should only contain limited data to make a better predict at a longer horizon. However, if we wish to see what happened in the near future, the recursive scheme may be a better choice.
+
+
+
+
+# Conclusion and Future Work
+
+Now, we will review and summarize what our project has mainly done and what conclusions will be drawn from our results.
+
+
+Our data set include two variables, which are the **Employment Rate of People Aged from 15 to 64 in the United States** and **U.S. Imports of Goods by Customs Basis from China**. We want to study the relationship between the employment rate and the imports from a primary trading country from 2010 to 2020.
+
+
+Based on the auto.arima function, the results suggest that we should include one AR variable, one MA variable and two S-MA variables under the first difference for employment rate data and suggest two AR variables, one S-MA variable for import data. AR(1) means that the result from t-1 will affect the result of next period. AR(2) means that the result from t-2 will affect the result of next two periods. MA(1) means that the error of t period and t-1 period have relationship. The error matrixs of both of these two variables are pretty small compared with the level of the data. This means the ARIMA function creates an efficient model. 
+
+
+Then we fit a model that includes trend, seasonality, and cyclical components to both data sets. We take four steps to optimize our time series model. We **de-trend** the data sets at the first step. The ACF and PACF plots of the residuals show that our residuals still exist auto-correlation and the residuals have strong seasonality, so it is necessary to continue analyzing our data and optimizing the model. Then, we fit our time series model with **Quadratic Trend and Seasonality**. According to the result of plots, we find the plot of residuals has a narrow range at this model compared with the previous one which just uses de-trending. Compared with the ACF and PACF plot before, this ACF and PACF plot under Quadratic Trend and Seasonality model suggest a more evidently weakly dependent relationship, so it is more optimal to add the Seasonality factor in our model. In our final model, we include all factors with **Quadratic Trend, Seasonality and Cycle**. The residual plot has a more random pattern compared with all previous model. From the ACF and PACF plot, we see the significance of lag become smaller. The decreasing of the significance of lag of final model illustrates that our model is improved by adding the trend factor. Consequently, we consider the EMP.4 and IMP.4 model are our best models. 
+
+After finalizing our model, we use the **CUSUM residual plot** to check whether our data set contain outliers. The results from cumulative sums of residuals stay within the 95% confidence region. This means that our data does not exist outliers. Thus, the model seems to fit the data. At the same time, the CUSUM result shows the values moving around 0, determining the effectiveness of the model. The recursive residual plot shows that different period's residuals are uncorrelated, which means our model is efficient under the time series regression.
+
+
+Then we plan to fit **VAR model** to check the relationship between these two data sets. There are 9 significant variables for the VAR model when we use employment rate as dependent variable. There are 6 lag variables relative to employment rate and 3 variables relative to the import. This means that import could explain how the employment rate change because of the existence of the lag variables of import. There are 6 significant variables for the VAR model when we use import as dependent variable. For this case, there is only one lag variable relative to employment rate that exists at the beginning of the period. This means that imports could not be explained by the employment rate change. 
+  
+Based on the empirical economic theory, the imports reduce the labor demand, so it will cause a lower employment rate. However, we get a contradictory result from the empirical economic theory. One of the possible explanations is **both of import and employment rate connect with the economic well-being of a country**. From the Macroeconomics, we know a country's imports will increase when a country's GDP is increasing. Our time series data are start from 2010 until 2020. These ten years are the recover time of US economy to revive from the 2008 Financial Crisis, and a booming economy has higher labor demand to producing the goods. This may be the reason why the trend of imports is positive and employment rate continues to growing. For these reasons, the increasing of import doesn't crush the labor demand, but boosts the labor market.
+   
+But interestingly, the GC-test for the two data sets suggests that these variables could explain each other. The reason why we get this contradictory consequence is the explanatory variables in the imports VAR model may exist higher auto-correlation. This auto-correlation result is not significant when we use import as dependent variable. However, it becomes significant when we do the GC-test for both of the variables.
+  
+
+Finally, we divide our data sets into an estimation set and a prediction set. We wish to see if our model is good at prediction. We use two methods: recursive back testing scheme and moving window back testing scheme. Comparing the error from recursive back testing scheme with the real error from our model, we find that the short horizon perform a better forecast than the longer horizon. The reason is forecasting on the longer horizon will cause a higher variance. This higher variance will lead a higher forecast variance. Consequently, the forecast confidence interval of a long horizon is bigger. We have the same steps for moving window backtesting scheme.  
+  
+And to compare which scheme is overall better, it is really hard to give a definite answer from the plots. **The MAPE plot forecasting 12-steps ahead with 2 schemes** shows that the recursive backtesting scheme works better at early periods, and the moving average backtesting scheme works better than the recursive backtesting scheme after the intercept point, which is because the moving average back testing scheme has a small error. **Overall, the Moving average scheme performs better than the Recursive scheme.** This conclusion means that the lags of our best model are limited, and we should only contain limited data to make a better predict at a longer horizon. However, if we wish to see what happened in the near future, the recursive scheme may be a better choice.
+
+
+According to the above conclusions, the factors affecting the accuracy of the regression model can be considered from two aspects. First is the size of the data set. Second is the correlation between the time series data. Therefore, it is vital to improve our model from these two aspects. However，the prediction data still has some potential problem such as the range of the variance. Therefore, more factors are needed to continue to optimize the model based on our conclusions.
+
+
+
+
+# Reference
+
+Organization for Economic Co-operation and Development, Employment Rate: Aged 15-64: All Persons for the United States [LREM64TTUSM156N], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/LREM64TTUSM156N, December 5, 2020.
+
+U.S. Bureau of Economic Analysis and U.S. Census Bureau, U.S. Imports of Goods by Customs Basis from China [IMPCH], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/IMPCH, December 5, 2020.
+
+
+

@@ -1,0 +1,765 @@
+---
+title: "Project1"
+author: 
+ - Li, Mingyuan(105180986)
+ - Li, Xiuqi(605638474)
+ - Sun, Yiran(905629996)
+ - Yang, Zixin(405632963)
+date: "11/19/2020"
+output: pdf_document
+fontfamily: times
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+library(Boruta) #Boruta
+library(missForest)
+library(Amelia)
+library(mice)
+library(stats)#complete.cases
+library(zoo) #na.approx
+library(psych) #describe
+library(leaps)#regsubsets
+library(car)#subsets  #Boot  #hccm
+library(corrplot)#corrplot
+library(stargazer)
+library(tidyverse)#rename
+library(caret) #train
+library(lmtest)#reset
+library(sandwich)#vcov
+library(effects)#
+library(margins)
+```
+
+# 1.Motivation for the Project
+
+With the development of science and technology and the progress of society, health has become an increasingly important topic in the world. We also pay more and more attention to people's life expectancy. Although there have been a lot of studies on people's life expectancy in the past, our team want to study the factors affect the life expectancy. Consequently, this time we choose this database, which includes all the data of various countries from 2000 to 2015, including immune factors, mortality factors, economic factors, social factors and other health-related factors, so we can analyze them by building the regression models.
+
+
+This database is derived from the Global Health Observatory (GHO) data repository of the World Health Organization (who), tracking health conditions and many other relevant factors in all countries. The database are available to the public for health data analysis. Database on life expectancy and health factors for 193 countries were collected from the same who database website, and their corresponding economic data were collected from the United Nations website. Among the many factors, some key factors were selected as the more representative ones. It has been noted that in the past 15 years, the health sector has tremendous development, especially in developing countries where human mortality has improved a lot. In this project, the individual data files have been merged into one single data set. Opening the database, we can see that the data shows some missing values. 
+
+
+Since the data set is from WHO, we find there are no obvious errors. We use the Missmap methods to deal with the missing data, and use reasonable values to replace them. The result indicated that most of the missing data was for Population, Schooling, Alcohol and GDP. The missing data are from less known countries like Vanuatu, Tonga, Togo, Cabo Verde etc. It’s difficult to find all the data for these countries, so we decided that exclude the variables with lots of missing values in our final dataset.
+
+
+Our project will be divided into five parts. After variable selection, we will do some data description and try to find the relationship between the variables and come up with a base model. Relied on the very first model, then we will try to optimize our model to fit the sample better and perform as accurate prediction as possible. At last we will do an overall interpretation on our model and finding.
+
+
+# 2.Variable Selection
+To study the factors that affect the life expectancy, we need to find the variable in which exist relationship with life expectancy. Consequently, we will look over all of the data in our dataset and then use sevral criteria to filter the variables that we believe could be used to build on our model.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+
+lifedata_raw <- read.csv("Life Expectancy Data.csv",stringsAsFactors = TRUE)
+# First let's take a look at the data below by describe(lifedata_raw)
+
+str(lifedata_raw)
+# We can see many variables with missing values.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# So, we deal with NAs first.
+
+# Draw a map of missing values.
+# We can also use md.pattern(lifedata_raw) to see which columns have missing values.
+missmap(lifedata_raw,legend=TRUE)
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Here we interpolate the NAs with linear method.
+
+# First to see how many columns have NAs.
+a <- names(lifedata_raw)
+b <- data.frame()
+null_df <- data.frame()
+
+for (i in a){
+  c <- sum(is.na(lifedata_raw[,i]))
+  b <- data.frame("Feature name"=i,"num of NAs"=c)
+  null_df <-rbind(null_df,b)}
+
+print(null_df)
+# And we can see there are 14 rows with missing value. 
+# So we interpolate the missing values in these 14 row.
+
+lifedata<- lifedata_raw
+
+for (i in 1:length(a)){
+  if (null_df[i,2]>0){
+    lifedata[,a[i]] <- na.approx(lifedata[,a[i]])
+  }
+}
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+describe(lifedata)
+# Now we can see that the NAs are all replaced.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Deal with Categorical Variable
+
+# We can see that "Status" here is a categorical variable. 
+# So let's create a new column of dummy variable.
+lifedata$Developed <- ifelse(lifedata$Status == "Developed",1,0)
+attach(lifedata)
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Since there are 22 variables that we can choose, we want to know which of them 
+# is the best choice for our model selection. As a result, we run the Boruta Algorithm
+# as a criteria to check the best choice of the variable.
+
+# Boruta Algorithm
+boruta.life <- Boruta(Life.expectancy~.,data=lifedata,doTrace=3)
+print(boruta.life)
+
+plot(boruta.life,xlab="",xaxt="n")
+lz<-lapply(1:ncol(boruta.life$ImpHistory),function(i)
+  boruta.life$ImpHistory[is.finite(boruta.life$ImpHistory[,i]),i])
+names(lz) <- colnames(boruta.life$ImpHistory)
+Labels <- sort(sapply(lz,median))
+axis(side = 1,las=2,labels = names(Labels),
+at = 1:ncol(boruta.life$ImpHistory), cex.axis = 0.6)
+
+# We use Boruta algorithm to test important explanatory variables.
+# It gives us 10 best variables: HIV.AIDS, Adult.Mortality,  
+# Income.composition.of.resources, Country, Alcohol, Year, Total expenditure, 
+# thinness.5.9.years, Schooling, thinness..1.19.years.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Since the Boruta Algorithm is not the only method to filter the best variable for 
+# model selection. We also use Mallows Cp to verify and comparing the result with 
+# Boruta Algorithm.
+
+# Mallows Cp
+ss2 <- regsubsets(Life.expectancy~.-Country-Status,method=c("exhaustive"), 
+                  nbest=3, data=lifedata)
+subsets(ss2,statistic="cp",legend=F,main="Mallows CP", col="steelblue4",ylim=c(200,300))
+#It gives us eight best variables: Adult.Mortality,infant.deaths,BMI, under.five.deaths, 
+#HIV.AIDS, Diphtheria, Schooling, Developed.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Select variables
+
+#Based on the above result, we choose the following variables as our explanatory variable.
+#"Schooling""Income_Comp_Of_Resources""HIV.AID""Adult_Mortality""Developed = Status"
+
+#For conciseness, we rename the columns.
+lifedata <- lifedata %>% 
+  rename(
+    Life.exp = Life.expectancy,
+    Income.res = Income.composition.of.resources,
+    Adult.Mort = Adult.Mortality
+  )
+attach(lifedata)
+```
+
+Below is the explanation includes Dependent Variable and independent variables
+
+Dependent Variable
+Life expectancy: Life Expectancy in age
+ 
+
+Selected independent variables(5):
+Adult Mortality: Adult Mortality Rates of both sexes (probability of dying between 15 #and 60 years per 1000 population)
+HIV/AIDS: Deaths per 1 000 live births HIV/AIDS (0-4 years)
+Income composition of resources: Human Development Index in terms of income composition of resources (index ranging from 0 to 1)
+Schooling: Number of years of Schooling(years)
+Status: Developed or Developing status
+
+
+# 3.Data Description
+Right now, we have selected variables. Next step is to test the availability of these variables. Following, we will use plots to check each variables that we selected. Solve the potential problems. Finally, a predictive model will be created and tested.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Descriptive Analysis
+#Check the availability of these variables.
+
+
+#Plot function
+plot_function<- function(x){
+  par(mfrow=c(2,2),mar=c(2, 4, 3, 2))
+  hist(x,main = "(a) Histogram")
+  plot(density(x,na.rm = TRUE),main = "(b) Density estimate")
+  qqnorm(x,main = "(c) QQ-plot")
+  boxplot(x,main="(d) Boxplot")
+}
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+plot_function(lifedata[,"Life.exp"])
+#"Life.exp" represents Life Expectancy in age.
+
+#This variable fits the characters of normal distribution well.
+#So we will not take the log of it. 
+#The QQ-plot shows us a linear relationship. There are limited outliers 
+#in the box-plot.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+plot_function(lifedata[,"Schooling"])
+#"Schooling" represents average number of years of schooling of a population.
+
+#From the graph, we can know that "Schooling" kind of have a normal 
+#distribution,so we don't need to do transformation. 
+#The QQ-plot give us linear relationship and 
+#the outliers seems not a lot and the distances from upper limit and 
+#lower limit are almost the same.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+plot_function(lifedata[,"Income.res"])
+#"Income.res" represents Human Development Index in terms of income composition 
+#of resources (index ranging from 0 to 1).
+
+#From the graph, the distribution is a little bit left-skewed. But it seems it 
+#doesn't have many outliers. 
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+plot_function(lifedata[,"HIV.AIDS"])
+#"HIV.AIDS" represents deaths per 1000 live births caused by HIV/AIDS for people under 5.
+
+#And from the graphs below, we can see the values for most observations 
+#are gathered at certain level. It might due to the variable definition, 
+#so we will take a transformation later. 
+#For most countries with advanced medical technology, the deaths rate caused by HIV/AIDS 
+#for people under 5 years old could be contained at a low level.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+plot_function(lifedata[,"Adult.Mort"])
+#"Adult.Mort" represents Adult Mortality Rates of both sexes (probability of 
+#dying between 15 and 60 years per 1000 population)
+
+#This distribution is right-skewed, which means it might need transformation later.
+#But its QQ-plot has a linear relationship, so after the transformation, 
+#it would look better.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+Boxplot(Life.expectancy~Status,data=lifedata)
+qqPlot(Life.expectancy~Status,data=lifedata, layout=c(1,2))
+#"Status" here means whether a country is considered to be 'Developing' or 'Developed' 
+#by WHO standards.
+
+#We can know from the boxplot that the median life expectancy of developed country 
+#is higher than that of developing countries. And the "developing" has some outliers, 
+#which means there might exist imbalance among these countries. 
+#But from QQ-plot, we can see that both kinds of countries have a linear 
+#relationship with Life.Expectancy.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Correlation plot
+#Or use scatterplotMatrix(~Life.exp + Schooling + Income.res + HIV.AIDS + 
+#Adult.Mort + Developed)
+
+life.cor <- cor(cbind(Life.exp,Schooling,Income.res, HIV.AIDS, Adult.Mort, Developed))
+corrplot(life.cor,method="number")
+
+#According to the correlation plot below, we can know the correlation 
+#relationship among these variables. Most of the variables we selected have a 
+#strong correlated relationship with the dependent variable "life expectancy".
+#Therefore, we can build a reasonable model with these variables.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#For "HID.AIDS" and "Adult.Mort", we test them together with bcpower.
+#Check whether we need to transform these variables or not.
+summary(powerTransform(cbind(HIV.AIDS,Adult.Mort)~1, family="bcPower"))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Based on the bcpower results, we apply (HIV.AIDS)^(-0.63) to HIV.AIDS 
+#and (Adult.Mort)^0.55 to Adult.Mort.
+#And we can see the graph after transformation.
+plot_function((HIV.AIDS)^(-0.63))
+plot_function((Adult.Mort)^0.55)
+#Compared with the former graphs, we can find that we improve these distributions.
+#If we didn't transform these variables, there will be more likely to have the 
+#problem of collinearity and heteroskedasticity. And after the transformation, we improve 
+#the correlation between variables, so our model could fit our predictive model better.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Evaluate the transformation in model.
+
+#First we rename the dataset to avoid troubles in the future steps.
+lifedata <- lifedata %>% 
+  mutate(
+    TransHIV = as.numeric(I(HIV.AIDS^(-0.63))),
+    TransAdult = as.numeric(I(Adult.Mort^0.55))
+  )
+attach(lifedata)
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Now, let's create the foundation model.
+
+#The foundation model
+mod.base <- lm(Life.exp ~ Schooling + Income.res + HIV.AIDS + Adult.Mort + Developed)
+#The model after transformation
+mod.trans <- lm(Life.exp ~ Schooling + Income.res + TransHIV + TransAdult + Developed)
+
+stargazer(mod.base,mod.trans,type="text")
+#From the model we can also see, after transformation, we have a higher R-square and 
+#a lower standard error of residual. This step demonstrates that our previous steps with 
+#variable transformation is necessary. Consequently, Our model fits our data better 
+#and have a more effective prediction.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Correlation plot after transformation
+lifetrans.cor <- cor(cbind(Life.exp, Schooling, Income.res, TransHIV,
+                           TransAdult, Developed))
+corrplot(lifetrans.cor,method="number")
+
+# We find that some variables exist high correlations. This means our basic model may
+# exist some potential problems such as multicollinearity. 
+# So, we will optimize model in the future.
+
+```
+
+# 4.Model Optimization
+
+Right now, we have our basic model. However, there may exist some potential problems. Next, we will use multiple test method to detect problems, and solve them. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Detect and solve problems
+
+#Test outliers
+influenceIndexPlot(mod.trans,vars = "Studentized")
+#There are some outliers in this plot that affect the result.
+#Remove outliers.
+
+cooksd <- cooks.distance(mod.trans)
+influential1 <- as.numeric(names(cooksd)[(cooksd > 4*mean(cooksd, na.rm=T))])
+out <- c(influential1)
+
+mod.out <- update(mod.trans,data=lifedata[-out,])
+stargazer(mod.trans, mod.out,type="text")
+#After removing the outliers, our model is improved. Now, we have a higher R-square and 
+#a lower standard error of residual. Our model fits the sample data better and have 
+#a more efficient prediction. However, we still need to test collinearity and 
+#the interaction between them to have a optimal model.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Test for multicollinearity
+tidy(vif(mod.out))
+#Based on the VIF test, all the VIF values of variables are less than 4, which means 
+#our model don't have multicollinearity problems.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Test if the higher power variables are needed 
+resettest(mod.out,power=2:3,type="regressor")
+#The higher power term is needed to add in our model.
+
+#So first, let's start with "Income.res".
+mod.2 <- update(mod.out,.~.+I(Income.res^2))
+stargazer(mod.out,mod.2,type="text")
+AIC(mod.out,mod.2)
+BIC(mod.out,mod.2)
+#The change of marginal effect of "Income.res"
+plot(effect("Income.res",mod.out))
+plot(effect("Income.res",mod.2))
+
+#After adding higher power of "Income.res", the marginal effect of "Income.res" 
+#becomes larger with "Income.res" become larger. 
+#And the model becomes better with a lower standard error of residual, AIC, BIC 
+#and higher R square. 
+#This means higher power of "Income.res" is necessary.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#The next variable is "TransHIV"
+mod.3 <- update(mod.2,.~.+I(TransHIV^2))
+stargazer(mod.3,mod.2,type="text")
+AIC(mod.3,mod.2)
+BIC(mod.3,mod.2)
+
+#Marginal Effect of "TransHIV"
+plot(effect("TransHIV",mod.2))
+plot(effect("TransHIV",mod.3))
+#After adding higher power term of "TransHIV", the marginal effect of "TransHIV" 
+#becomes larger at beginning, but when it reaches certain point , the ME decreases.
+#And the model becomes better with a lower standard error of residual, AIC, BIC 
+#and higher R square. 
+
+#From economic perspective, we believe 
+#the ability that HIV cause human(0-4 years) death is not a simple liner relationship 
+#with life expectancy. The TransHIV = (HIV.AIDS^(-0.63) means that the lower HIV.AIDS, 
+#the higher life expectancy. This is rational with our intuition, the area 
+#where exist higher HIV.AIDS, the scenario that people are easily dead at an early age. 
+#Consequently, leads a lower Life expectancy at this area.
+
+#However, this kind of intuition is not a simple relationship. 
+#If a area that HIV.AIDS is lower enough, counting decreasing the HIV.AIDS 
+#could not have the same effect when HIV.AIDS is higher. This is the reason why 
+#the marginal effect of TransHIV is diminishing. 
+#And the higher power term TransHIV2 proves this.
+#Consequently, this is the reason why the coefficient of TransHIV is positive, 
+#but the higher power term TransHIV2 is negative.
+
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#"TransAdult"
+mod.4 <- update(mod.3,.~.+I(TransAdult^2))
+stargazer(mod.3,mod.4,type="text")
+AIC(mod.3,mod.4)
+BIC(mod.3,mod.4)
+
+#Marginal Effect of "TransAdult"
+plot(effect("TransAdult",mod.3))
+plot(effect("TransAdult",mod.4))
+#After adding higher power of "TransAdult", the marginal effect of "TransAdult" 
+#becomes larger at beginning, but soon it reaches a certain point, and the ME decreases.
+#The model becomes better with a lower standard error of residual, AIC, BIC 
+#and higher R square.
+
+#From economic perspective, 
+#we think TransAdult doesn't have a simple liner relationship with life expectancy. 
+#The Adult.Mort means how much a 15 year old person will die 
+#before reaching his/her 60th birthday given 1000 people per sample. 
+#TransAdult = Adult.Mort^0.55,TransAdult2 = Adult.Mort^1.1
+#Based on the result, it is rational that country where are higher Adult.Mort
+#would cause the Life Expectancy lower. 
+#This is why the coefficient of TransAdult2 is negative.
+
+#However, if some country's Adult.Mort are already small enough, the factors 
+#that lead to increase Life expectancy would not have more relationship with Adult.Mort.
+#The reason is that the country may reach its natural mortality rate. 
+#The deviation beyond the natural mortality rate may cause the negative effect 
+#for Life Expectancy. 
+#Consequently, this is why the coefficient of TransAdult is positive and 
+#the higher power term TransAdult2 is negative.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Check the necessity of interaction variables
+#The reason we interact "Developed" with others is because whether a country is developed
+#or developing could hugely influence the "Schooling" "TransAdult" and "Income.res".
+#And actually all of our variables depends on the country's development 
+#so it is reasonable to interact them one by one, which is what we do as follows.
+
+#We check "Developed" first.
+mod.5 <- update(mod.4,.~.+Developed:Schooling)
+stargazer(mod.5,mod.4,type="text")
+AIC(mod.5,mod.4)
+BIC(mod.5,mod.4)
+
+mod.7 <- update(mod.5,.~.+Developed:TransAdult)
+stargazer(mod.7,mod.5,type="text")
+AIC(mod.7,mod.5)
+BIC(mod.7,mod.5)
+
+mod.8 <- update(mod.7,.~.+Developed:Income.res)
+stargazer(mod.7,mod.8,type="text")
+AIC(mod.7,mod.8)
+BIC(mod.7,mod.8)
+
+mod.9 <- update(mod.8,.~.-Developed)
+stargazer(mod.8,mod.9,type="text")
+AIC(mod.7,mod.8,mod.9)
+BIC(mod.7,mod.8,mod.9)
+
+#After the process above, we find that "Developed" becomes not significant, 
+#which might be due to the reason we interact "Developed" with other terms 
+#so its effect has been dispersed.
+#So we eliminate "Developed" in our model.
+```
+
+```{r}
+#Now, we try "TransAdult"
+mod.10 <- update(mod.9,.~.+Schooling:TransAdult)
+stargazer(mod.10,mod.9,type="text")
+AIC(mod.10,mod.9)
+BIC(mod.10,mod.9)
+
+#We think here "Developed" and "TransAdult" have no interaction relationship now 
+#Eliminate "Developed" and "TransAdult"
+
+mod.11 <- update(mod.10,.~.-Developed:TransAdult)
+stargazer(mod.10,mod.11,type="text")
+AIC(mod.9,mod.10,mod.11)
+BIC(mod.9,mod.10,mod.11)
+
+
+#Now test interaction variables with "Income.res"
+mod.12 <- update(mod.11,.~.+Income.res:TransHIV)
+stargazer(mod.12,mod.11,type="text")
+AIC(mod.12,mod.11)
+BIC(mod.12,mod.11)
+
+
+mod.13 <- update(mod.12,.~.+Income.res:TransAdult)
+stargazer(mod.12,mod.13,type="text")
+AIC(mod.12,mod.13)
+BIC(mod.12,mod.13)
+#We think "Income.res" and “TransAdult” have interaction relationship and 
+#adding the interaction variable of Income.res and TransAdult makes the model better.
+
+
+#"TransHIV" is the last.
+mod.14 <- update(mod.13,.~.+TransHIV:TransAdult)
+stargazer(mod.14,mod.13,type="text")
+AIC(mod.14,mod.13)
+BIC(mod.14,mod.13)
+
+#We think "TransHIV" and "TransAdult" have interaction relationship and adding 
+#the interaction of "TransHIV" and "TransAdult" makes the model better.
+
+#But here we see that Schooling:TransAdult seems no interaction.
+#So we delete Schooling:TransAdult
+mod.15 <- update(mod.14,.~.-Schooling:TransAdult)
+stargazer(mod.15,mod.14,type="text")
+AIC(mod.15,mod.14,mod.13)
+BIC(mod.15,mod.14,mod.13)
+
+#After adding all these interaction term we can see our model improved a lot.
+```
+
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Residual plot
+residualPlot(mod.15)
+
+#In this plot, the observations mostly distributed around the base line.
+#Overall, the residual plot shows that our model has a good fit on the prediction.
+#Although the blue curve has a little bent at the 0-40 fitted value, which might because 
+#the observations in this zone are too little, caused some acceptable error.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Cook's distance
+influenceIndexPlot(mod.15,vars = "Cook")
+#In this plot, there are still a few outliers, but the cook's distance of these outleirs 
+#are within 0.03, which is a very small value. So we think it is acceptable.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Heteroskedasticity
+ncvTest(mod.15)
+#The test has a p-value less than a significance level of 0.05, 
+#therefore we can reject the null hypothesis that the variance of the residuals 
+#is constant, and infer that heteroscedasticity is indeed present, 
+#thereby confirming our graphical inference.
+
+#Here we adopt White Robust SE to adjust the standard error.
+cov1 <- hccm(mod.15,type="hc1")
+life.hc1 <- coeftest(mod.15,vcov.=cov1)
+stargazer(mod.15,life.hc1,type="text")
+
+#We use White Robust Stand Error method to adjust our model. Based on the result, 
+#we can figure out almost all the standard error of the coefficient are increasing. 
+#This does not mean that our old model has problems. 
+#The reason is that the standard error increasing comes from 
+#the fundamental model selection. At previous steps, we use lots of tools to 
+#optimize our model. 
+
+#However, the existence of the heteroskedasticity shows our coefficients' standard error 
+#are not reliable. 
+#As a result, we need to adjust our coefficients' stand error to be a reliable estimates. 
+#This is what White Robust SE did. Consequently, the coefficients' standard error 
+#is more accurate even though it is increasing after adjust. 
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Now to bootstrap the model 
+
+set.seed(12345)
+life.boot <- Boot(mod.15,f=coef,R=1000)
+summary(life.boot,high.moments=TRUE)
+#With the bootstrap method, we generate new data to run our model. 
+#From the summary, compared with the bootMed and original data, we can find out that 
+#the bootBias and the bootSE are very little. The random data can also fitted 
+#in out created model. The kurtosis shows there are significant importance in 
+#these variables and the model. The created model has acceptable bias and error.
+
+#Hist
+hist(life.boot,legend="separate")
+#From graphs below, we find that all the histograms are normally distributed, and 
+#fit the character of normally distribution, so we think that the our model is an ideal model.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Cross-validation
+
+train_life <- trainControl(method="cv",number=5,savePredictions = TRUE,
+                           returnResamp = "all")
+mod <- caret::train(Life.exp ~ Schooling + Income.res + TransHIV + TransAdult + 
+                      I(Income.res^2) + I(TransHIV^2) + I(TransAdult^2) + 
+                      Schooling:Developed + Income.res:Developed + Income.res:TransHIV + 
+                      Income.res:TransAdult + TransHIV:TransAdult, 
+                    data = lifedata[-out, ], trControl = train_life,method="lm")
+print(mod)
+#We have a five fold cross validation test, 
+#In the five fold test results below, the RMSE is 2.80043, which is low, 
+#and R squared value is 0.9028 which is also close to 1.
+#So the test proves that my model is better fit the data and has a good prediction.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Test by splitting my data
+
+set.seed(12)
+samples <- Life.exp %>%
+    createDataPartition(p=0.8,list=FALSE)
+
+train_samples <- lifedata[samples,]
+test_samples <- lifedata[-samples,]
+
+model.test <- update(mod.15,data=lifedata)
+predictions <- mod.15 %>% predict(test_samples)
+data.frame(
+    RMSE = RMSE(predictions, test_samples$Life.exp),
+    R2 = R2(predictions, test_samples$Life.exp))
+#After splitting out data to into testing and training sets, 
+#we make predictions based on the testing set. 
+#The new RMSE is 3.227954 and a new R square is 0.8862344. Our prediction
+#is basically successful, although there are still some space to improve. 
+
+#Our model has a good performance overall.
+```
+
+
+# 5.Discussion and Conclusion
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Our final model is mod.15. And let's see how it performs.
+summary(mod.15)
+
+# Based on our Final model, the Life expectancy would have the relationship with the 
+# rest 5 factors, Schooling,TransHIV,TransAdult,Income.res and Developed. Since all the
+# term are Significant, so we can start to interact with each one.
+
+# Developed is 1 if a country is Developed country and 
+# 0 if a country is not Developed country.
+
+
+
+### Schooling
+# Schooling means Number of years of Schooling(years). 
+# The two terms include the schooling in our model are Schooling and Schooling:Developed. 
+
+# Schooling has a positive relationship with Life expectancy. 
+# This is rational with our intuition, people who has higher education would 
+# has more knowledge to increase their life expectancy than people who has less education.
+# We estimate that one unit increase at Schooling will leads to an expect of 
+# 0.369283 increase at Life expectancy.
+
+# Schooling:Developed has a negative relationship with Life expectancy.
+# An rational explanation is that, if a country is a Developed country, 
+# people who start getting education at this kind of country would 
+# have a similar life path. Getting education from elements Schooling until university. 
+# However, the education pressure at developed country are much higher than 
+# that inthe developing country.
+# The education pressure would cause the people's life expectancy decreased.  
+
+
+
+### HIV.AIDS
+# HIV/AIDS means Deaths per 1 000 live births HIV/AIDS (0-4 years)
+# TransHIV = HIV.AIDS^(-0.63) 
+# The two terms include the schooling in our model are TransHIV, TransHIV^2.
+
+# TransHIV has a positive relationship with Life expectancy. 
+# HIV.AIDS under TransHIV is a denominator.
+# This means HIV.AIDS has a correlation with TransHIV. 
+# As a result, that the coefficient of TransHIV is positive is rational. 
+# Higher HIV.AIDS leads lower TransHIV that would boost people's life expectancy.
+
+# TransHIV^2 has a negative relationship with Life expectancy. 
+# This term interprets that the relationship of TransHIV with life expectancy 
+# is not simple linear relationship. 
+# If the area that HIV.AIDS is low enough, the decreasing of HIV.AIDS 
+# could not has the same effect compared with the area have higher HIV.AIDS. 
+# This means a diminishing marginal effect of TransHIV. 
+# Consequently, The coefficient of TransHIV^2 is negative.
+
+
+
+### Adult.Mort
+# "Adult.Mort" represents Adult Mortality Rates of both sexes (probability of 
+# dying between 15 and 60 years per 1000 population).
+# TransAdult = Adult.Mort^(0.55)  TransAdult^2 = Adult.Mort^1.1
+# The three terms include in our model are TransAdult, TransAdult^2 
+# and TransHIV:TransAdult.
+
+# TransAdult^2 has a negative relationship with the Life expectancy. 
+# It is rational that country with a higher Adult.Mort would 
+# cause the Life Expectancy lower. 
+# This is why the coefficient of TransAdult2 is negative.
+
+# TransAdult has a positive relationship with Life expectancy. 
+# However, if some country's Adult.Mort are already small enough, the factor 
+# that lead to increase Life expectancy would not have too much relationship 
+# with Adult.Mort. The reason is that the country may reach its natural mortality rate. 
+# The deviation beyond the natural mortality rate may cause the negative effect 
+# for Life Expectancy. 
+
+# TransHIV:TransAdult has a negative relationship with Life expectancy.
+# This interaction term means while keeping the TransHIV constant, 
+# the increasing of the interaction term would leads decreasing of the Life Expectancy. 
+# This is rational because the similarity of the TransHIV^2 term,
+# higher Adult.Mort would cause the Life Expectancy lower. 
+
+
+
+### Income.res
+# Income.res = Income composition of resources: 
+# Human Development Index in terms of income composition of resources 
+# (index ranging from 0 to 1)
+# The five terms include in our model are 
+# Income.res , Income.res^2, Income.res:Developed, Income.res:TransHIV and 
+# Income.res:TransAdult
+
+# Income.res has a positive relationship with Life expectancy. 
+# The coefficient of Income.res is rational, because if an area has higher 
+# Human Development Index, the Life expectancy should be higher by 
+# the higher income come from the natural source.
+
+# Income.res^2 has a positive relationship with Life expectancy. 
+# This term means the promotion of Income.res is not just simple linear relationship.
+# It has power increasing ability with Life expectancy. We believe the reason comes
+# from the Income.res including all the resource that needed to maintain the life.
+# The resource that maintain the life is limited on the earth, 
+# and that's why Income.res^2 coefficient is positive.
+
+# Income.res:Developed has a positive relationship with Life expectancy.
+# This term means given a country is developed country, the increasing Income.res
+# would lead to an increasing at Life expectancy. This is rational because 
+# Developed country own advance technology. These country could easily transfer 
+# the nature resource to the other stuff that boost the human's life.
+
+# Income.res:TransHIV has a negative relationship with Life expectancy.
+# Income.res:TransAdult has a negative relationship with Life expectancy.
+# Both of two terms has a negative relationship with Life expectancy but not too big.
+# This doesn't mean these two terms are not important in our model
+# This means given a country's Income.res, the higher term would lead to 
+# a decreasing at Life expectancy.
+
+
+
+# Summary what we figure out above, we would wish a person living in a developed country
+# with the higher Income composition of resources. At the same time this country currently  
+# should at its natural mortality rate. 
+# The country has a lower HIV/AIDS: Deaths per 1,000 live births HIV/AIDS (0-4 years) 
+# At the same time, people just take rational Schooling at his/her life. 
+# If all condition satisfy, people would has a high Life expectancy under our model.
+
+
+
+
+
+```
