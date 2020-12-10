@@ -1,0 +1,242 @@
+---
+title: "402_GroupHW"
+author: 
+ - Gong, Zheng(705645681)
+ - Huang, Zidong(505646766)
+ - Sun, Yiran(905629996)
+ - Wang, Yuhao(805642837)
+date: "11/26/2020"
+output: pdf_document
+fontfamily: times
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+#library
+library(readxl) 
+library(tseries)
+library(forecast)
+```
+
+# Question 1
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+data <- read_xlsx("Dataset for Homework.xlsx",col_names=FALSE)
+data_ts <- ts(data)
+```
+
+
+## (A) Plot data and label as Figure 1
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+plot(data_ts,main="Figure 1",ylab="value")
+
+# Stationarity
+plot(diff(data_ts), main="First Difference of Observations", ylab="Value")
+# The graph shows that the mean of first difference of observations is 0 
+# which is constant, and the variance and the covariance approximately to be constant. 
+# Thus, we speculate that the data is covariance stationary. 
+# And then, we will do ADF test to check the stationary.
+
+# ADF test
+adf.test(data_ts)
+# Since p-value of ADF test is 0.09, we reject null hypothesis(data is not stationary) 
+# at 10% significance level.
+
+# According to the results of first difference of the data and ADF test, 
+# we think the data is stationary.
+```
+
+
+## (B)Estimate AR(1) model for data points 1-150.
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+data_ts1 <- data_ts[1:150,]
+ar1 <- Arima(data_ts1,order=c(1,0,0),include.constant=TRUE)
+summary(ar1)
+
+ar1.2 <- Arima(data_ts1,order=c(1,0,0),include.constant=FALSE)
+summary(ar1.2)
+
+#Since the model without constant has smaller AIC, we assume this model is better. 
+#So we choose the model without constant, which is ar1.2.
+
+#Coefficient of Y(t-1) is  0.8360, standard error is 0.0435.
+
+coef <- 0.8360
+coef.se <- 0.0435
+t.stat <- coef/coef.se
+t.stat
+qt(0.975,149)
+
+#Since the t-stat here is 19.21839 > 1.976, we think 
+#coefficient of Y(t-1) is statistically significant at 5% significance level.
+```
+
+
+## (C)Forecast for the remaining 50 observations
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+fcasts <-  vector(mode = "list")
+datafcast <- data.frame()
+d=vector()
+for (i in 1:50){
+  win.forecast <- window(data_ts,end=149+i)
+  datafcast<- rbind(datafcast,as.data.frame(forecast(win.forecast, model = ar1.2, 
+                                                     h = 1)))
+  d[i] = data_ts[150+i]-datafcast[i,1]
+}
+
+# One-period forecasts
+datafcast
+
+# RMSE
+RMSE=sqrt(sum(d^2)/50)
+
+RMSE
+
+```
+
+
+## (D)AR(2) Model
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+ar2 <- Arima(data_ts1,order=c(2,0,0),include.constant=TRUE)
+summary(ar2)
+
+ar2.2 <- Arima(data_ts1,order=c(2,0,0),include.constant=FALSE)
+summary(ar2.2)
+
+#Since the model without constant has smaller AIC, we assume this model is better. 
+#So we choose the model without constant, which is ar2.2.
+
+#Coefficient of Y(t-1) is  0.8604, standard error is 0.0823.
+#Coefficient of Y(t-2) is  -0.0291, standard error is 0.0833.
+
+
+# Significance Test
+
+coef1 <- 0.8604
+coef1.se <- 0.0823
+t1.stat <- coef1/coef1.se
+t1.stat
+qt(0.975,148)
+
+#Since the t-stat here is 10.45443 > 1.976122, we think 
+#coefficient of Y(t-1) is statistically significant at 5% significance level.
+
+
+coef2 <- -0.0291
+coef2.se <- 0.0833
+t2.stat <- coef2/coef2.se
+t2.stat
+qt(0.025,148)
+
+#Since the t-stat here is |-0.3493397| < |-1.976122|, we think 
+#coefficient of Y(t-2) is not statistically significant at 5% significance level.
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## Forecast
+fcasts <-  vector(mode = "list")
+datafcast2 <- data.frame()
+d2=vector()
+for (i in 1:50){
+  win.forecast <- window(data_ts,end=149+i)
+  datafcast2<- rbind(datafcast2,as.data.frame(forecast(win.forecast,model = ar2.2, 
+                                                       h = 1)))
+  d2[i] = data_ts[150+i]-datafcast2[i,1]
+}
+
+# One-period forecasts
+datafcast2
+
+# RMSE
+RMSE2=sqrt(sum(d2^2)/50)
+
+RMSE2
+
+cat("RMSE for AR(1) Model is",RMSE,"\n","RMSE for AR(2) Model is",RMSE2)
+
+#Comparing the RMSE for 2 models, we can see the AR(1) model has smaller RMSE, 
+#which means it generates better forecasts. And the reason why it is happening 
+#can also be seen from the coefficient test above.
+
+#The significant test for coefficient of ar2 is not significant, which means this variable
+#does not help explain the predicted variable better. So it is reasonable the RMSE becomes
+#bigger and AR(1) generates better forecasts.
+```
+
+
+
+
+# Question 2
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+GDP <- read.csv("GDPC1.csv",header=TRUE)
+GDP <- ts(GDP[,2],start=1950,freq=4)
+# Plot the data
+plot(GDP,ylab="Real GDP", xlab="Time")
+
+# Take Log
+lGDP <- log(GDP)
+# Plot
+plot(lGDP,ylab="Log(Real GDP)", xlab="Time")
+
+# First order difference
+GDP.diff <- diff(lGDP)
+# Plot
+plot(GDP.diff,ylab="FD of Log(Real GDP)", xlab="Time")
+
+#Correlogram
+par(mfrow=c(3,1))
+acf(GDP.diff, type = "covariance", main="Autocovariance",lag.max=50, ylab="COV")
+acf(GDP.diff, type="correlation", main="Autocorrelation", lag.max=50, ylab="ACF")
+acf(GDP.diff, type="partial",main="Partial Autocorrelation", lag.max=50, ylab="PACF")
+
+#Construct an AR model
+fit <- ar(GDP.diff)
+fit$order
+
+#So we choose an AR(2) model.
+fit2 <- Arima(GDP.diff,order=c(2,0,0),include.constant=TRUE)
+summary(fit2)
+
+#Coefficient of Y(t-1) is  0.3366, standard error is 0.0600 .
+#Coefficient of Y(t-2) is  0.1115, standard error is 0.0612.
+#Coefficient of constant is  0.0078, standard error is 0.0009.
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## Forecast
+fcasts <-  vector(mode = "list")
+lGDPfcast <- data.frame()
+dGDP <- vector()
+GDPfcast <- vector()
+for (i in 1:33){
+  #win.GDP <- window(GDP.diff, end=c(2011,3)+i*0.25)
+  lGDPfcast<- rbind(lGDPfcast,as.data.frame(forecast(GDP.diff[1:247+i], 
+                                                     model = fit2, h = 1)))
+  
+  if (i == 1) {GDPfcast[i] <- GDP[248]*exp(lGDPfcast[i,1])}
+  else {GDPfcast[i] <- GDPfcast[i-1]*exp(lGDPfcast[i,1])}
+  dGDP[i] = GDP[248+i]-GDPfcast[i]
+}
+
+# Plot the real GDP and the One-period forecasts
+t <- seq(2012,2020.25,length=33)
+matplot(t,cbind(ts(GDPfcast,start=c(2012,1),frequency = 4),
+                window(GDP,start=c(2012,1))), type="l",lwd=2,
+        ylab="Predicted GDP VS. Real GDP",col=c("red","blue"))
+legend("topleft",c("Predicted GDP","Real GDP"),
+       col=c("red","blue"),lty=c("solid","dashed"),lwd=2)
+
+
+# RMSE
+
+RMSE.GDP=sqrt(sum(dGDP^2)/33)
+
+RMSE.GDP
+
+```
+
+
+
