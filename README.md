@@ -2,6 +2,7 @@
 Projects Finished in UCLA, MAE During following courses:
 
 <br>
+
 **Fall:**
 <br>
 
