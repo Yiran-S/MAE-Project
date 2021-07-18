@@ -1,0 +1,499 @@
+---
+title: "ECON412_Project 1"
+author: 
+- LIU, YIPING
+- LATIFI, ROYA
+- SUN, YIRAN
+date: "`r format(Sys.Date(),'%b %d,%Y')`"
+output: 
+  rmarkdown::html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: Black;
+  text-align: center;
+}
+
+h4.author { /* Header 4 - and the author and data headers use this too  */
+  font-size: 20px;
+  color: Black;
+  text-align: center;
+}
+
+h4.date { /* Header 4 - and the author and data headers use this too  */
+  font-size: 18px;
+  color: Gray;
+  text-align: center;
+}
+
+body { 
+  font-size: 14pt;
+  lineheight: 14p;
+}
+
+</style>
+---
+# I. Introduction
+
+In general, machine learning problems could be divided into two categories, supervised learning and unsupervised learning. Unsupervised learning is used to solve clustering problems, density estimation, and dimensionality reduction issues. Density estimation is the construction of an estimate of an unobservable underlying probability density function, which consists of both parametric and non-parametric methods. 
+In machine learning studies, we are often interested in a predictive modeling problem where we would like to predict a class label for a given observation. A probabilistic classifier can predict, given an observation of input, the conditional probability of a class label, and Bayes Theorem provides a principled way for calculating this conditional probability. 
+
+**Bayes Theorem:**
+
+$$\begin{equation} \Pr(L|Features)=\frac {\Pr(Features|L)\Pr(L)}{\Pr(Features)} \end{equation} % $$
+Bayes theorem provides a principled way of calculating a conditional probability without the joint probability. Under Bayes rule, sequential Bayesian learning and Naive Bayes are two popular methods of solving density estimation problems. But in practice, even with large datasets, it may be hard to find other records that exactly match the record, in terms of predictor values, with Bayes Theorem. In this situation, the Naive Bayes classification model can be used. 
+
+Naive Bayes theory is a simple supervised machine learning and data-driven algorithm that uses the Bayes theorem and it makes only simple assumptions about the data. Naive Bayes learners and classifiers can be extremely fast compared to more sophisticated methods. The decoupling of the class conditional feature distributions means that each distribution can be independently estimated as a one-dimensional distribution. This in turn helps to alleviate problems stemming from the curse of dimensionality.
+
+<br><br>
+
+## A. Task Description
+
+Our data is from Thera Bank, which has a growing customer base. The dominant part of these clients are depositors and, borrowers only account for a very small portion of the clients. Thus, Thera Bank is keen on extending its customer base quickly to acquire more loan business and all the while, procure more through the interest on loans.
+
+Thera Bank management wants to have a model that will assist them with recognizing the potential clients who have a higher likelihood of buying the credit. Specifically, the bank needs to investigate methods of changing its liability clients over to personal loan clients. 
+
+For this project, our objective is to implement a naive Bayesian learning algorithm to the Thera Bank data set and to construct a model that will assist the bank with distinguishing the potential clients who have a higher likelihood of getting the loan.
+
+<br>
+
+
+
+# II. Data
+
+We utilized the There Bank dataset, taken from the UCI Machine Learning Repository, which has 5000 observations with fourteen variables divided into four different measurement categories. The data incorporates customer segment data (age, income, etc.), the customer's relationship with the bank (mortgage, securities account, etc.),  and the customer response to the last personal loan campaign (Personal Loan). 
+
+<br>
+
+## A. Attribute Information:
+
+The binary category has five variables, including the target variable personal loan, also securities account, CD account, online banking, and credit card. The interval category contains five variables: age, experience, income, CC avg, and mortgage. The ordinal category includes the variables family and education. The last category is nominal with ID and Zip code.
+
+<br>
+
+**Dependent Variable:**
+
+![](target.png){width=50%}
+
+The dependent variable in this dataset is the personal loan. It is a categorical variable with values 0 and 1. 
+
+Since we use naive Bayes in data analysis, we will transform the numerical variables into categorical ones in the upcoming steps. 
+
+<br>
+
+**Independent Variables:**
+
+![](features.png){width=50%}
+
+
+
+**Categorical:**
+
+* Family : Family size of the customer
+
+* Education : Education Level.
+
+      1. Undergrad
+      
+      2. Graduate
+      
+      3. Advanced/Professional
+      
+* Securities Account : Does the customer have a securities account with the bank?
+
+* CD Account : Does the customer have a certificate of deposit (CD) account with the bank?
+
+* Online : Does the customer use internet banking facilities?
+
+* Credit card : Does the customer use a credit card issued by Thera Bank?
+
+**Numerical:**
+
+* Age : Customer's age in completed years
+
+* Experience : #years of professional experience
+
+* Income : Annual income of the customer
+
+* CCAvg : Avg. spending on credit cards per month
+
+* Mortgage : Value of house mortgage if any.
+
+<br>
+
+* ID : Customer ID
+
+* ZIP Code : Home Address ZIP code.
+
+<br>
+
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+#library
+library(readxl)
+library(stats)
+library(psych) #describe
+library(ggplot2)
+library(GGally) #pairplot
+library(reshape) #for heatmap
+library(e1071)#NB
+library(caret)
+library(ROCit)#ROC
+library(gains)
+```
+
+## B. Data Input 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+data <- read_excel("Bank_Personal_Loan_Modelling.xlsx",sheet ="Data", col_names = TRUE)
+head(data)
+```
+
+There are 5000 rows and 14 columns in the dataset.
+
+<br>
+
+
+## C. Simple Description
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# check NA
+a <- names(data)
+b <- data.frame()
+null_df <- data.frame()
+
+for (i in a){
+  c <- sum(is.na(data[,i]))
+  b <- data.frame("Feature name"=i,"num of NAs"=c)
+  null_df <-rbind(null_df,b)}
+
+print(null_df)
+```
+
+In our data, we haven't observed any missing values.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#simple describe
+describe(data)
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Delete rows with negative Experience 
+data <- data[data$Experience >= 0,]
+describe(data)
+```
+
+- The mean value of Age is 45. The majority of the customers are falling in the 51-60 age bucket followed by 41-50 and then 31-40.
+
+- Experience feature has a minimum value of -3, which is not valid as there is not such a thing as a negative experience. Thus, it needs to be corrected by dropping those values.
+
+- The median value for income is 64 while the maximum and minimum values of income are 224 and 8 respectively. We have observed that the standard deviation for income is very high.
+
+- The number of people that have CD accounts is very low. 
+
+- Almost 60% of users use online banking.
+
+- Almost 30% of the users use credit cards.
+
+- Family Members, Education, Personal Loan, securities Account, CD Account, Online, Credit
+Cards seem to be factor variables.
+
+- ID and Zip Code seem to be irrelevant for analysis as they won’t play a role in classifying the customer group.
+
+<br>
+
+## D. Data analyis and insights
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# distribution of dependent variable
+ggplot(data, aes(x = factor(data$`Personal Loan`))) +
+  geom_bar()+
+  ggtitle("Distribution of Personal Loan Stage")
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+accept <- sum(data$`Personal Loan`==1)
+
+cat("Number of customers who bought personal loan:",accept, 
+    "(",accept / length(data$`Personal Loan`) * 100 ,"%)")
+cat("\nNumber of customers who didn't buy personal loan:",length(data$`Personal Loan`)-accept, 
+    "(",(1-accept / length(data$`Personal Loan`)) * 100 ,"%)")
+```
+
+
+Among these 5000 customers, only 480 (= 9.6%) accepted the personal loan that was offered to them in the earlier campaign.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# distribution of independent variables
+hist(data$Age,main="Distribution of Age")
+hist(data$Experience,xlim=c(0,50),main="Distribution of Experience")
+hist(data$Income,main="Distribution of Income")
+hist(data$CCAvg,main="Distribution of CCAvg")
+hist(data$Mortgage,main="Distribution of Mortgage")
+ggplot(data, aes(x = factor(data$`Securities Account`))) + 
+  geom_bar()+
+  ggtitle("Distribution of Security Account")
+```
+
+
+* Age: Senior citizens are relatively low when compared to other age buckets. The density graph shows that the age variable has an almost normal distribution.
+
+* Experience: Most customers in the Thera Bank dataset have 21-30 years of experience. The density graph shows that the experience variable has an almost normal distribution.
+
+* Income: Most customers are earning an average income of fewer than 50k dollars per year. Customers earning more than 100k dollars are relatively low when compared to other buckets. The density graph shows that the income variable is rightly skewed.
+
+* CCAvg: The number of customers that have average spending on credit cards per month less than $1000 is relatively low. The density graph shows that the average spending on credit cards per month variable is rightly skewed.
+
+* Mortgage: The majority of the customers are not having any mortgage. The density graph shows that the mortgage variable is rightly skewed.
+
+
+<br>
+
+## E. Correlation Matrix Analysis
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE,fig.height=8,fig.width=10}
+# Heatmap
+corr <- melt(cor(as.matrix(data)))
+
+par(mar=c(0,0,0,0))
+ggplot(corr, aes(x=X1,y=X2,fill=value))+
+  geom_tile()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=0.25))+
+  geom_text(aes(fill = round(corr$value,2),label = round(corr$value,3)),size=4)
+```
+
+
+* Usage of credit card is positively correlated to income of a person.
+
+* The number of customers with higher education are buying Personal Loan compared to other groups.
+
+* Customers who operate online are more likely to take loans compared to non online users.
+
+* Family with size more than 2 are more interested in personal loans.
+
+* Customers with no credit card are more interested to buy personal loans.
+
+* Customers with no security accounts are more interested in buying personal loans.
+
+* There is a higher correlation in Age and Experience features so we can drop one of them.
+
+* Correlation coefficient of ID and target variable Personal Loan is negative and close to zero so we can drop the variable.
+
+* Correlation coefficients of Age and Experience are negative and close to zero so we can drop these variables as well.
+
+* Correlation coefficient of Zip code variable is also close to zero so we can drop this variable
+
+<br>
+
+
+## F. Data Processing
+
+<br>
+
+**Variable Selection**
+
+Based on data correlation and classification intuition, we have chosen Age, Experience, Income, Family, CCAvg, Education, Mortgage, Securities Account, and CD Account as features for classification and use the features to determine Personal Loan category which will help the bank with distinguishing the potential clients who have a higher likelihood of getting the loan.
+
+<br>
+
+**Variable Transformation**
+
+In our dataset, all of the variables are of numeric data type. Naive Bayes requires categorical variables. Thus, numerical variables must be binned and converted to categorical.
+
+We have converted the below variables into factors:
+
+We use the “factor” function to transform family members, securities account, CD Account, and education into categorical variables. 
+As for Age, Experience, Mortgage, Income, CCAvg, we split them into several groups based on data distribution and then converted them into categorical variables. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Transfer into Categorical variable
+data$`Personal Loan` <- factor(data$`Personal Loan`)
+data$Family <- factor(data$Family)
+data$`Securities Account`<- factor(data$`Securities Account`)
+data$`CD Account`<- factor(data$`CD Account`)
+data$Education <- factor(data$Education)
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Change numerical variable into Categorical ones
+data$AgeG <- factor(cut(data$Age,breaks = c(22,30,40,50,60,70)
+             ,labels=c("<=30","31-40","41-50","51-60","more than 60")))
+
+data$ExperienceG <- factor(cut(data$Experience,breaks = c(0,10,20,30,50)
+             ,labels=c("<=10y","11-20","21-30","more than 30")))
+
+data$MortgageG <- factor((data$Mortgage>0)*1)
+
+data$IncomeG <- factor(cut(data$Income,breaks = c(0,50,100,150,300)
+                    ,labels = c("0-50$","51-100$","101-150$","151-$")))
+
+data$CCAvgG <- factor(cut(data$CCAvg,breaks = c(0,1,4,6,20)
+                   ,labels = c("1","2-4","5-6", "more than 6")))
+
+head(data)
+```
+
+<br>
+
+**Dataset Split**
+
+We split 60% of the data for training and the left is used for validation.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Create training and validation sets.
+selected.var <- c(6,8,10,12,15,16,17,18,19)
+
+set.seed(412)
+train.index <- sample(c(1:dim(data)[1]), dim(data)[1]*0.6)
+
+train.data <- data[train.index, selected.var]
+valid.data <- data[-train.index, selected.var]
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# check if the dependent variable is distributed evenly.
+accept1 <- sum(train.data$`Personal Loan`==1)
+accept2 <- sum(valid.data$`Personal Loan`==1)
+
+cat("Number of customers who bought personal loan in Training set:",accept1, 
+    "(",accept1 / length(train.data$`Personal Loan`) * 100 ,"%)")
+cat("\nNumber of customers who bought personal loan in Validation set:",accept2, 
+    "(",accept2 / length(valid.data$`Personal Loan`) * 100 ,"%)")
+```
+
+<br><br>
+
+# III. Model Fitting
+
+## A. Fitting Naive Bayes
+
+We have used a Naive Bayes classifier to conduct the classification and estimate the personal loan category of potential clients (unknown sample) with attributed features. The Naive Bayes function will help us compute a categorical class variable’s prior and posterior probabilities using the Bayes rule and predict the class of a new sample from its features. It finds the probability of a given set of features for all possible values of the class variable Y (Potential Client Class) and picks up the output with maximum probability. With this algorithm, we can determine the potential client class of a sample by its highest posterior probability.
+
+**Naive Bayes Method**
+
+$$\begin{equation} \Pr(X|C=i)=\prod_{n=1}^t {\Pr(X_n|C=i)} \end{equation} % $$
+$$\begin{equation} y=argmax_yP(y)\prod_{i=1}^n {\Pr(X_i|y)} \end{equation} % $$
+The above equation of Naive Bayes helps us to obtain the class of potential clients, given the predictors/features.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+model <- naiveBayes(`Personal Loan` ~ ., data = train.data)
+model
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#we could check one by one
+prop.table(table(train.data$`Personal Loan`, train.data$Family), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$Education), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$`CD Account`), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$AgeG), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$ExperienceG), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$MortgageG), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$IncomeG), margin = 2)
+prop.table(table(train.data$`Personal Loan`, train.data$CCAvgG), margin = 2)
+```
+
+<br>
+
+The columns give the posterior probabilities of the labels. 
+
+* As for the results of Naive Bayes, we can see that for categorical variables clients with higher education levels, or without a CD account are more likely to accept loan services. Families with more members are more likely to accept loan services overall but the number of family members won’t strictly affect the acceptance.
+
+* And for initial numerical variables which we transformed by assigning groups, clients who are younger than 30 are more likely to be involved in loan services, as well as those with less working experience(less than 10 years). And higher salaries and higher spending on credit cards also indicate that they are potential loan clients. 
+
+* The mortgage conditions do not have a significant impact on loan needs. 
+
+<br>
+
+
+## B. Predict Probabilities
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Predict Probabilities
+pred.prob <- predict(model, newdata = valid.data, type = "raw")
+
+## predict class membership
+pred.class <- predict(model, newdata = valid.data)
+
+df <- data.frame(actual = valid.data$`Personal Loan`, predicted = pred.class, pred.prob)
+df
+```
+
+<br>
+
+From the results, we could get the probability that the customers may accept the personal loan and the predicting classification of the client from the validation part of the dataset. 
+
+<br>
+
+## C. Evaluating Performace
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Confusion Matrix for Training
+fit.class <- predict(model, newdata = train.data)
+confusionMatrix(as.factor(fit.class), as.factor(train.data$`Personal Loan`))
+
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Confusion Matrix for Validation
+confusionMatrix(pred.class, as.factor(valid.data$`Personal Loan`))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#ROC for Training
+plot(rocit(score=as.numeric(fit.class),class=as.numeric(train.data$`Personal Loan`)))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#ROC for Testing
+plot(rocit(score=as.numeric(pred.class),class=as.numeric(valid.data$`Personal Loan`)))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+gain <- gains(ifelse(valid.data$`Personal Loan`==1,1,0), pred.prob[,1], groups=100)
+
+# Plot the Lift Chart
+plot(c(0,gain$cume.pct.of.total*sum(valid.data$`Personal Loan`==1))~c(0,gain$cume.obs), 
+     xlab="# cases", ylab="Cumulative", main="", type="l")
+
+lines(c(0,sum(valid.data$`Personal Loan`==1))~c(0, dim(valid.data)[1]), lty=2)
+```
+
+<br>
+
+From the Confusion Matrix results, we know that the accuracy score in the training dataset is 0.9276 (0.9176, 0.9366), and in the validation dataset is 0.9308 (0.9187, 0.9416) meaning that the probability of determining the target correctly is very high. 
+
+Cohen's kappa coefficient ($\kappa$) is a statistic that is used to measure inter-rater reliability for categorical items, taking into account the possibility of the agreement occurring by chance. As the k values here are both about 0.57, we can say our model does a fairly good job. And Mcnemar's Test also tells us that our model is reliable since the P-Value is lower than 0.05.
+
+Besides the confusion matrix, we also plotted the ROC curve and Lift Charts. The receiver operating characteristic (ROC) curve is another common tool used with binary classifiers. The dotted line represents the ROC curve of a purely random classifier; a good classifier stays as far away from that line as possible (toward the top-left corner). When AUC = 1, the classifier can perfectly distinguish between all the Positive and the Negative class points correctly. If AUC = 0, it means that the classifier would be predicting all Negatives as Positives, and all Positives as Negatives. This means that, the higher the AUC, the better the performance of the model. From the ROC curve, we could see the AUC (Area under the ROC Curve) space of both training and validation data is similar, proven by the accuracy score of data, and the optimal point located around (0.02, 0.58). The TPR (true-positive rate) of training data is a little bit higher than the validation data. 
+
+<br><br>
+
+# V.Conclusion
+
+In this project, we have used the `Naive Bayes method` to classify and predict the probability of clients from Thera Bank accepting the personal loan service and classify potential clients. Based on the correlation of variables, we chose eight variables (family, education, CD account, age, experience, mortgage, income, and CCAvg) and transformed the quantitative variables into categorical variables to run a Naive Bayes model and classify clients. As for model results, the accuracy of both the training and classification part of data were quite high (above 90%) and Naive Bayes generated decent classification results for this dataset. 
+
+<br><br>
+
+# VI. Reference
+
+* Bank_Personal_Loan_Modeling data can be found here: https://www.kaggle.com/krantiswalke/bank-personal-loan-modelling
+
+
+
+
+
+
+
+
+
+
