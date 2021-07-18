@@ -1,0 +1,1098 @@
+---
+title: 'ECON 412 Fundamentals of Big Data: Project 2, Part 2- Regularization'
+author: 
+- LIU, YIPING
+- LATIFI, ROYA
+- SUN, YIRAN
+date: "`r format(Sys.Date(),'%b %d,%Y')`"
+output: 
+  rmarkdown::html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: Black;
+  text-align: center;
+}
+
+h4.author { /* Header 4 - and the author and data headers use this too  */
+  font-size: 20px;
+  color: Black;
+  text-align: center;
+}
+
+h4.date { /* Header 4 - and the author and data headers use this too  */
+  font-size: 18px;
+  color: Gray;
+  text-align: center;
+}
+
+body { 
+  font-size: 14pt;
+  lineheight: 14p;
+}
+
+</style>
+
+```{r, echo=FALSE, warning=FALSE, message= FALSE}
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60))
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+rm(list=ls(all=TRUE))
+library(ggplot2) # visualization
+library(ggrepel)
+library(ggthemes) # visualization
+library(scales) # visualization
+library(dplyr) # data manipulation # for data cleaning
+library(VIM)
+library(data.table)
+library(formattable)
+library(plotly)
+library(corrplot)
+library(GGally)
+library(caret) #CV
+library(car) 
+library(stringr)
+library(Amelia )
+library(naniar)
+library(data.table)
+library(caret)
+library(glmnet)  # for ridge regression
+library(psych)   # for function tr() to compute trace of a matrix
+library(performance) #for model performance
+library(caTools)
+library(tidyverse)    # data manipulation and visualization
+library(kernlab)      # SVM methodology
+library(e1071)        # SVM methodology
+library(ISLR)         # contains example data set "Khan"
+library(RColorBrewer) # customized coloring of plots
+library(dummies)
+library(pls)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+```
+
+# Part II. Regularization
+
+## I. Introduction
+
+This paper analyzes the ability of 6 models to predict IMDB Scores of the movies. For this project, we have used IMDB dataset to predict IMDB score of the movies with given predictors. We have used regularization techniques such as Ridge, Lasso and Elastic Net to address the multicollinearity issue. Later, we have adopted Principal Component Analysis, Random Forest and SVM models. Our goal is to understand the important factors that make a movie more successful than others. Also, understanding the important factors that makes a movie to have a higher IMDB score can help the film industry to create successful movies.
+
+<br><br>
+
+## II. Data and Data Preparation
+
+We utilized a dataset, taken from the Kaggle website, of 5043 movies. Our data contains 28 variables for 5043 movies, spanning across 100 years in 66 countries.
+The response variable is the IMDB score of the movies. The IMDB score is numerical. Later, we change our imdb_Score response variable into binary variable in order to classify movies as successful movies and unsuccessful movies. The movie that has the lowest IMDB score is Justin Bieber: Never Say Never and has 1.6 IMDB score while the movie that has the highest IMDB score is Towering Inferno and has 9.5 IMDB Score.
+
+<br>
+
+### A. Loading Data
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+IMDB = read.csv("movie_metadata.csv")
+summary(IMDB)
+head(IMDB)
+dim(IMDB)
+```
+
+Our dependent variable that we want to model is imdb_score and it is numerical. Our data has 5043 and 28 predictors. 
+
+<br>
+
+### B. Data Pre-Processing
+
+#### Analyzing if there are any duplicates
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+sum(duplicated(IMDB))
+IMDB = IMDB[!duplicated(IMDB), ]
+dim(IMDB)
+```
+We have observed that there are 45 duplicated rows so we have deleted them and continued with unique observations. Now our data has 4998 and 28 predictors. 
+
+<br>
+
+#### Top 10 Profitable Movies
+
+Here, we wanted to see the most profitable movies in the film industry. We have calculated the profit and and return on investment in order to obtain this result. We see that Avatar was the most profitable.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+IMDB = IMDB %>% 
+  mutate(profit = gross - budget,
+         return_on_investment_perc = (profit/budget)*100)
+
+
+
+#Top 20 movies based on its Profit
+IMDB %>%
+  filter(title_year %in% c(2000:2016)) %>%
+  arrange(desc(profit)) %>%
+  top_n(20, profit) %>%
+  ggplot(aes(x=budget/1000000, y=profit/1000000)) +
+  geom_point() +
+  geom_smooth() + 
+  geom_text_repel(aes(label=movie_title)) +
+  labs(x = "Budget $million", y = "Profit $million", title = "Top 10 Profitable Movies") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+<br>
+
+#### Genres
+
+Our dataset was a bit "unclean". Therefore, we have performed data pre-processing before our models. The first issue was the genres.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+head(IMDB$genres)
+```
+
+As seen above, most of the movies have more than one genres attributed to them and they are seperated by | sign. In order to make our analysis easier and since some movies have multiple genres attributed to them, we just keep the first genre that was given to the movie in the genre column, and create dummy variables for all movies genres, marking them as 1 if they belong to certain genre.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+genres = data.frame(do.call('rbind',strsplit(as.character(IMDB$genres),
+                                                 '|',fixed=TRUE)))
+
+all_genres <- unique(unlist(strsplit(as.character(IMDB$genres),'|',fixed=TRUE)))
+
+dummy_genres = data.frame(matrix(ncol=length(all_genres),nrow=length(IMDB[,1])))
+colnames(dummy_genres) <- all_genres
+
+for (i in seq(length(IMDB[,1]))){
+  dummy_genres[i, unique(unlist(genres[i,]))] = 1
+}
+
+dummy_genres[is.na(dummy_genres)] <-  0
+
+#Check the sum of each genres
+colSums(dummy_genres)
+```
+
+Since the last columns has so little number, we decide to drop them.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+dummy_genres <- dummy_genres[-c(22:26)]
+head(dummy_genres)
+
+IMDB = cbind(IMDB, dummy_genres)
+
+IMDB$genres = genres$X1
+head(IMDB)
+```
+
+<br>
+
+### C. Visaulization Analysis
+
+Later, we have performed visual analysis in order to understand the data and the patterns in the data. Another reason we have performed visual analysis was to understand if there are any outliers and dominant variables that we might need to adress in future. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Overview on Categorical and Continuous variables
+cat_plot<-function(data,var){ ggplot(IMDB,aes(x=var,y=imdb_score,alpha=0.5,col=var))+
+labs(title=colnames(as.data.frame( data$var)))+
+geom_jitter() }
+
+cont_plot<-function(data,var){ ggplot(IMDB,aes(x=var,y=imdb_score,alpha=0.1))+
+labs(title=paste("", names(var)))+
+geom_point() }
+```
+
+#### Some Continuous Variables
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+#Some of the continuous variables
+cont_plot(IMDB, IMDB$movie_facebook_likes)
+```
+
+We can see that there is slightly a positive relationship between Facebook movie likes and IMDB score although it is not very obvious.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cont_plot(IMDB, IMDB$budget)
+```
+
+We do not observe a particular pattern between IMDB score and budget of the movie.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cont_plot(IMDB, IMDB$gross)
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cont_plot(IMDB, IMDB$director_facebook_likes)
+```
+
+Although movies that have its director's Facebook likes high have high IMDB scores generally, we cannot not say that there is a positive relationship between IMDB score and facebook director likes particularly as directors that have low facebook likes can have high imdb scores as seen from the plot. This might be because the Director doesn't have a page on Facebook but still a well known director. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cont_plot(IMDB, IMDB$actor_1_facebook_likes)
+```
+
+
+We do not observe a particular pattern between IMDB score and Facebook likes of actor 1 of the movie.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cont_plot(IMDB, IMDB$duration)
+```
+
+We do not observe a particular pattern between IMDB score and duration of the movie.
+
+<br>
+
+####  Some Categorical Variables
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=10, fig.height=4}
+cat_plot(IMDB, IMDB$content_rating )
+```
+
+We can see that most of the movies in our dataset has content rating of PG, PG-13 and R. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=10, fig.height=4}
+cat_plot(IMDB, IMDB$language )+ scale_x_discrete(labels = NULL)
+```
+
+As seen from the plot, English is the dominating language of the movies. Although there are other movies with different languages, they are very few.
+
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=12, fig.height=4}
+cat_plot(IMDB, IMDB$country )+ scale_x_discrete(labels = NULL)
+```
+
+The plot shows that USA is the dominant country for the movies. But unlike what we have seen in the languages, other countries do not look like outliers as they good amount of movies as well.
+
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cat_plot(IMDB, IMDB$title_year )
+```
+
+The plot shows that the dataset doesn't have many movies that were filmed before 1980. Thus we might think the movies before 1980s as outliers later when we are rearranging our data.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=7, fig.height=3}
+cat_plot(IMDB, IMDB$color )
+```
+
+
+Colored movies are dominant in the data.
+
+<br>
+
+### D. Removing useless variables
+
+To decide which variables keep in our data and which variables are important, we have looked at two different aspects.
+
+First, we checked the unique values and tried to understand how diversified the data is for those variables. The below variables pretty diversified and have unique values very close to our total observations. Thus, we believe that being too diversified will not help us with our regression and that those variables are useless. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Check total number of unique value for the variables selected
+sum(uniqueN(IMDB$director_name))
+sum(uniqueN(IMDB[, c("actor_1_name", "actor_2_name", "actor_3_name")]))
+sum(uniqueN(IMDB$movie_imdb_link))
+sum(uniqueN(IMDB$movie_title))
+sum(uniqueN(IMDB$plot_keywords))
+```
+
+
+Second, we have looked at some variables that have values that are dominating. We have also used visuals in part II.B in order to detect dominating variables.
+
+<br>
+
+Below variables have values that dominating almost all of the observations. Thus, we believed that keeping them would not be useful.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+table(IMDB$aspect_ratio)
+table(IMDB$color)
+table(IMDB$language)
+table(IMDB$country)
+```
+
+
+As we have observed from the plots in part II.B, USA has the largest number of movies in the dataset. But we have also seen that other countries do have considerable amount of movies. Thus, we have decided to classify them into two categories to be able to adress the noise in the data.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+levels(IMDB$country) = c(levels(IMDB$country), "Others")
+IMDB$country[(IMDB$country != 'USA')] <- 'Others' 
+IMDB$country <- factor(IMDB$country)
+table(IMDB$country)
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Removing useless variables
+
+#since movies later than 1980 dominant, we only keep those
+IMDB = IMDB[IMDB$title_year >= 1980,] 
+
+#deleting very diversified variables
+IMDB = subset(IMDB, select = -c(aspect_ratio,color,language,
+                                director_name,actor_1_name,
+                                actor_2_name, actor_3_name, content_rating,
+                                movie_title,  plot_keywords, movie_imdb_link,
+                                return_on_investment_perc, profit))
+
+head(IMDB)
+```
+
+
+### E. Missing Values
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Looking at the data to see if we have any missing variables
+missmap(IMDB[, ], col = c("white", "blue"), 
+        y.cex = 0.5, x.cex = 0.5, rank.order = TRUE)
+gg_miss_upset(IMDB)
+gg_miss_var(IMDB, show_pct = TRUE)
+colSums(sapply(IMDB, is.na))
+```
+
+The table and the plots suggest that there are missing values more 15% on gross level. “Budget” and “title_year” contains the highest missing values. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#dropping rows with the missing values in genres
+IMDB = IMDB[complete.cases(IMDB[19:38]),]
+colSums(sapply(IMDB, is.na))
+```
+
+Now let's deal with the rest NA.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#handling missing values-- Replacing with column means
+
+IMDB$num_critic_for_reviews[is.na(IMDB$num_critic_for_reviews)] = round(
+  mean(IMDB$num_critic_for_reviews, na.rm = TRUE))
+
+IMDB$budget[is.na(IMDB$budget)] = round(mean(IMDB$budget, na.rm = TRUE))
+
+IMDB$gross[is.na(IMDB$gross)] = round(median(IMDB$gross, na.rm = TRUE))
+
+#Drop the rest NA
+
+#checking if there are any N/A values left
+IMDB = IMDB[complete.cases(IMDB),]
+colSums(sapply(IMDB, is.na))
+
+head(IMDB)
+```
+
+<br>
+
+### F. Correlation Plot
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Correlation Map
+ggcorr(IMDB[1:17], label = TRUE, label_round = 2, 
+       label_size = 2, size = 2, hjust = .85) +
+  ggtitle("Correlation Plot") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+We see that cost_total_facebook_likes and actor_1_facebook_likes has the highest correlation coefficent value (0.95) and also cost_total_facebook_likes is highly correlated with actor_2_facebook_likes and actor_3_facebook_likes. Also actor_1_facebook_likes is highly correlated with actor_2_facebook_likes and actor_3_facebook_likes. Using regularization methods will help us address multicollinearity issue later in this project.
+
+<br>
+
+### G. Data Visualization
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Histogram of IMDB Score
+ggplot(IMDB, aes(imdb_score)) +
+  geom_histogram(aes(fill = ..count..), binwidth =0.5) +
+  labs(x = "Year movie was released", y = "Movie Count", title = "Histogram of IMDB Score") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Histogram of Duration
+ggplot(IMDB, aes(duration)) +
+  geom_histogram(aes(fill = ..count..), binwidth =0.5) +
+  labs(x = "Duration of the Movie", y = "Movie Count", title = "Histogram of Duration Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Histogram of Title Year
+ggplot(IMDB, aes(title_year)) +
+  geom_histogram(aes(fill = ..count..), binwidth =0.5) +
+  labs(x = "Year movie was released", y = "Movie Count", title = "Histogram of Title Year") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Boxplot
+ggplot(IMDB, aes(x = country, y = imdb_score)) +
+        geom_boxplot(fill = "Blue", colour = "skyblue3") +
+        scale_y_continuous(name = "IMDB Score") +
+        scale_x_discrete(name = "Country") +
+        ggtitle("Boxplot of IMDB Score and Countries") + 
+        theme(plot.title = element_text(hjust = 0.5), 
+                           axis.text.x  = element_text(angle = 90,
+                           size = 10))
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Boxplot
+ggplot(IMDB, aes(x = genres, y = imdb_score)) +
+        geom_boxplot(fill = "Blue", colour = "skyblue3") +
+        scale_y_continuous(name = "IMDB Score") +
+        scale_x_discrete(name = "Genres") +
+        ggtitle("Boxplot of IMDB Score and Genres") + 
+        theme(plot.title = element_text(hjust = 0.5), 
+                           axis.text.x  = element_text(angle = 90,
+                           size = 10))
+```
+
+<br><br>
+
+## III. Model Fitting: Regularization
+
+Regularization is used to improve linear regression by introducing a penalty term to the cost function and by replacing the least square fitting with some alternative fitting procedure, through minimizing the mean square error (MSE). 
+
+
+For variable selection process, we could have used subset selection methods such as stepwise regression. The disadvantage of stepwise regression is that in can be a bit biased and it gets worse when there are a lot of variables. An alternative is to use some of the shrinkage methods such as Ridge, Lasso and Elastic Net. Shrinkage method is used to increase accuracy and still have interpretability. In the first part of our models, we will use the shrinkage methods. 
+
+
+In our dataset, we have the country and the genres variables as categorical. Thus, we have changed them into dummy variables in order to make analysis easier.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Genres
+IMDB = subset(IMDB, select = -genres)
+
+head(IMDB)
+```
+
+<br>
+
+#### Partioning Data
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Splitting the data
+set.seed(412)
+train = sample.split(IMDB$imdb_score, SplitRatio = 0.75)
+
+IMDB_train <- subset(IMDB, train == TRUE)
+IMDB_test <- subset(IMDB, train == FALSE)
+
+```
+
+
+We have randomly split our data to create our training and testing sets. Training data consists of 75 percent of the whole data and testing data consists of 25 percent of the whole data. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Train and Test Data x and Y variables
+#predictor variables
+X_train = model.matrix(imdb_score ~ ., IMDB_train )[, -1]
+#outcome variables
+y_train = IMDB_train$imdb_score
+
+X_test = model.matrix(imdb_score ~ ., IMDB_test)[, -1]
+y_test = IMDB_test$imdb_score
+
+```
+
+<br>
+
+#### Shrinkage - Ridge, Lasso, Elastic Net
+
+– Involves shrinking the estimated coefficients towards zero
+– This shrinkage reduces the variance
+
+<br>
+
+### A. Ridge
+
+Ridge regression works well when there is multicollinearity. Ridge regression is used for independent variables with multicolinearity. When multicollinearity occurs, least squares estimates are unbiased, but their variances are large so they may be far from the true value. By adding a degree of bias to the regression estimates, ridge regression reduces the standard errors.
+
+• In general, the ridge regression estimates will be more biased than the OLS ones but have lower variance
+• Ridge regression will work best in situations where the OLS estimates have high variance (when number of observations and predictors are close)
+• Ridge Regression can even be used when p > n, a situation where OLS fails completely!
+
+
+alpha = 0 is ridge, alpha = 1 is lasso
+
+
+Ridge regression minimizes squared error while regularizing the norm of the weights:
+$$Ridge = RSS + \lambda\sum_{j=1} (\beta_j^2) $$ where $\lambda\sum_{j=1} (\beta_j^2)$ is the penalty term and  $\lambda$ is tuning (shrinkage) parameter. $\beta_{ridge}$ chosen to minimize the penalized sum of squares. As shrinkage variable ($\lambda$) increases coefficients shrinks towards zero, increases bias but decreases variance. 
+If lambda is large in loss function, it will lead to under-fitting problem. This model works well on avoiding over-fitting.
+
+<br>
+
+#### Fitting Ridge Model and Selecting lambda using 5-fold cross-validation
+
+
+We would like to choose lambda that reduces the mean squared error (which introduces the smallest bias) and get the value that is the minimum in the cross validation plot. This process uses 5-fold cross validation to find the best lambda by selecting the lambda with the smallest mean cross-validated error.
+
+Standarize = true makes standarization for predictors:
+
+First we have used cross validation in order to choose the optimal $\lambda$ that minimizes the mean squared error.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Perform 10-fold cross-validation to select lambda ---------------------------
+lambdas_to_try <- 10^seq(-3, 3, length.out = 100)
+
+# Setting alpha = 0 implements ridge regression
+set.seed(412)
+ridge_model = cv.glmnet(X_train, y_train, 
+                     alpha = 0, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 5)
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Plot cross-validation results
+plot(ridge_model, main = "Lambda with CV Plot")
+```
+
+This figure shows cross-validation results for different $log\lambda$s. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Best cross-validated lambda
+lambda_ridge = ridge_model$lambda.min
+lambda_ridge
+```
+
+The cross-validation results and the regression results tells us that the optimal $\lambda$ by mean squared error is 0.001.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE,fig.height=5.5}
+# See how increasing lambda shrinks the coefficients --------------------------
+# Each line shows coefficients for one variables, for different lambdas.
+# The higher the lambda, the more the coefficients are shrinked towards zero.
+
+res <- glmnet(X_train, y_train, alpha = 0, lambda = lambdas_to_try, standardize = FALSE)
+plot(res, xvar = "lambda",label=TRUE)
+legend("bottomright", lwd = 0.8, col = 1:5, legend = colnames(X_train), cex = .6)
+```
+
+
+The plot has $log(\lambda)$ on x-axis and the coefficients of the predictor variables on the y-axis. We observe that coefficeints of the predictors decay to zero as $log(\lambda)$ increases.
+
+<br>
+
+#### Testing on testing sample
+
+For this part, we train the ridge regression on our training sample first using the optimal $\lambda$ that we have found above.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Fit final model, get its sum of squared residuals and multiple R-squared
+
+ridge_fit  <- glmnet(X_train, y_train, alpha = 0, lambda = lambda_ridge, standardize = TRUE)
+y_hat_ridge <- predict(ridge_fit ,  X_test)
+
+ssr_ridge =  t(y_test - y_hat_ridge) %*% (y_test - y_hat_ridge)
+rsq_ridge =  cor(y_test, y_hat_ridge)^2
+
+sst <- sum((y_test - mean(y_test))^2)
+sse_ridge <- sum((y_hat_ridge  - y_test)^2)
+R2_ridge <- 1 - sse_ridge / sst
+
+# Evaluate performance and save it
+performance <- data.frame(Ridge=postResample(pred = y_hat_ridge, obs = y_test))
+performance
+```
+
+
+We found that the Ridge Regression that was trained on training sample gives an $R^2$ value of 0.4627 on the testing sample. The $R^2$ is not very good. Thus, we will fit other models to understand if we can increase the performance. 
+
+<br><br>
+
+### B. LASSO
+
+One significant problem with Ridge is that the penalty term will never force any of the coefficients to be exactly zero. The LASSO, Least Absolute Shrinkage and Selection Operator, works in a similar way to Ridge Regression, except it uses a different penalty term. With LASSO, we can produce a model that has high predictive power and it is simple to interpret. Lasso is an advanced version of Linear Regression, it adds a penalty term (absolute value of magnitude) to loss function. Shrinking and removing less important feature's coefficients can reduce variance without increasing bias. Lasso can raise the accuracy and reduce over-fitting.
+
+Lasso regression minimizes squared error while regularizing the norm of the weights:
+$$Lasso = RSS + \lambda\sum_{j=1} (|\beta_j|) $$ where $\lambda\sum_{j=1} (|\beta_j|)$ is the penalty term and  $\lambda$ is tuning (shrinkage) parameter.
+
+<br>
+
+#### Fitting Lasso Model and Selecting lambda using 5-fold cross-validation
+
+We used cross-validation to estimate the error rate for each value of  $\lambda$ and select the value that gives the least error rate.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Setting alpha = 1 implements Lasso regression
+lambdas_to_try <- 10^seq(-3, 3, length.out = 100)
+
+set.seed(412)
+lasso_model = cv.glmnet(X_train, y_train, 
+                     alpha = 1, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 5)
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Plot cross-validation results
+plot(lasso_model, main = "Lasso Lambda with CV Plot")
+```
+
+Here, 5 fold cross-validation has been applied to get the lowest MSE for the lasso.
+
+This figure shows cross-validation results for different $log\lambda$s. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Best cross-validated lambda
+lambda_lasso = lasso_model$lambda.min
+lambda_lasso 
+```
+
+The optimal by mean squared error $\lambda$ is 0.002656088. It gives the minimum mean cross-validated error.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE,fig.height=6}
+# See how increasing lambda shrinks the coefficients --------------------------
+# Each line shows coefficients for one variables, for different lambdas.
+# The higher the lambda, the more the coefficients are shrinked towards zero.
+
+res <- glmnet(X_train, y_train, alpha = 1, lambda = lambdas_to_try, standardize = FALSE)
+plot(res, xvar = "lambda",label=TRUE)
+legend("bottomright", lwd = 0.8, col = 1:6, legend = colnames(X_train), cex = .6)
+```
+
+
+The plot has $log(\lambda)$ on x-axis and the coefficients of the predictor variables on the y-axis. We observe that coefficients of the predictors decay to zero as $log(\lambda)$ increases.
+
+<br>
+
+#### Testing on testing samples
+
+For this part, we train the lasso regression on our training sample first using the optimal $\lambda$ that we have found above.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Fit final model, get its sum of squared residuals and multiple R-squared
+
+lasso_fit  <- glmnet(X_train, y_train, alpha = 1, lambda = lambda_lasso, standardize = TRUE)
+y_hat_lasso <- predict(lasso_fit ,  X_test)
+
+ssr_lasso =  t(y_test - y_hat_lasso) %*% (y_test - y_hat_lasso)
+rsq_lasso =  cor(y_test, y_hat_lasso)^2
+
+sse_lasso <- sum((y_hat_lasso  - y_test)^2)
+R2_lasso <- 1 - sse_lasso / sst
+
+# Evaluate performance and save it
+performance <- cbind(performance, data.frame(LASSO=postResample(pred = y_hat_lasso, obs = y_test)))
+performance
+```
+
+We found that the Lasso Regression that was trained on training sample gives an $R^2$ value of 0.4623 on the testing sample. The $R^2$ is not very good and slightly worse than the Ridge regression $R^2$ (it was 0.4627)
+
+<br><br>
+
+### C. Elastic Net
+
+Both Ridge and LASSO’s variable selection are too dependent on the data. Elastic Net on the other hand is a combination of Ridge and Lasso.
+
+$$\lambda_1\sum_{j=1} (\beta_j^2)+\lambda_2\sum_{j=1} (|\beta_j|)$$ or $$\lambda((1-\alpha)/2\sum_{j=1} (\beta_j^2)+\alpha\sum_{j=1} (|\beta_j|)$$ is the Penalty term in Elastic Net. Note that, $$\alpha_{RIDGE} = 0 $$  and $$\alpha_{LASSO} = 1 $$ for Lasso.
+
+<br>
+
+#### Fitting Elastic Net Model and Selecting lambda using 5-fold cross-validation
+
+First, we use the built-in function automatically select the best tuning parameters alpha and lambda. This function tests a range of possible alpha and lambda values, then selects the best values for lambda and alpha to choose the penalty term compositions, resulting to a final model that is an elastic net model.
+
+For this part, we train the Elastic Net regression on our training sample first using the optimal $\lambda$ that we have found above.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## Train the model
+set.seed(412)
+train_control <- trainControl(method = "cv",number = 5)
+
+enet_model <- train(x=X_train, y=y_train,
+                    method = "enet",
+                    preProcess = c("center", "scale"),
+                    tuneLength = 15,
+                    trControl = train_control)
+print(enet_model)
+```
+
+The CV method chooses $\lambda$ = 0 which means the optimal model would be using the Ridge Regression and not choosing a combination of Ridge and Lasso.
+
+<br>
+
+#### Testing on testing samples
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Predict using the testing data
+y_hat_enet <- predict(enet_model, X_test)
+
+ssr_enet =  t(y_test - y_hat_enet) %*% (y_test - y_hat_enet)
+rsq_enet =  cor(y_test, y_hat_enet)^2
+
+sse_enet <- sum((y_hat_enet  - y_test)^2)
+R2_enet <- 1 - sse_enet / sst
+
+# Evaluate performance
+performance <- cbind(performance, data.frame(ENet=postResample(pred =y_hat_enet, obs = y_test)))
+performance
+```
+
+
+We found that the Elastic Net Regression that was trained on training sample gives an $R^2$ value of 0.4626 on the testing sample. The $R^2$ is not very good and similar to the Ridge regression $R^2$ (it was 0.4627) and it should be the case because the best model chooses lambda to be zero, which is same as Ridge.
+
+<br><br>
+
+
+### D. SVM
+
+A support vector machine takes data points and outputs the hyperplane that best separates the tags. Kernel is better for making optimization when there are many features. Although Kernel SVM is more widely used as a non-linear classification model to classify binary results by projecting data into a higher dimension without increasing too much complexity of loss function, nowadays we can also apply it to regression data. And we usually refer to it as `Support Vector Regression`.
+
+Same as SVM, SVR depends on kernel functions and also permits for construction of a non-linear model without changing the explanatory variables, helping in better interpretation of the resultant model. The basic idea behind SVR is not to care about the prediction as long as the error is less than certain value. This is known as the principle of maximal margin. This idea of maximal margin allows viewing SVR as a convex optimization problem. SVR trains using a symmetrical loss function, which equally penalizes high and low misestimates. 
+
+<br>
+
+#### Fitting SVR and find the optimal model
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#find the optimal model
+set.seed(412)
+opt.svm <- tune(svm, train.x=X_train, train.y=y_train,cost=1:10,
+                tunecontrol=tune.control(sampling = "cross"), cross=5)
+print(opt.svm)
+
+# extract the best model
+best.svm <- opt.svm$best.model
+best.svm
+
+```
+
+In Support Vector Regression, support vectors are points that find the closest match between the data points and the actual function that is represented by them. The CV process finds the optimal number of support vectors that find the closest match between the data points and the actual function as 2880.
+
+<br>
+
+#### Testing on testing samples
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Predict using the testing data
+y_hat_svm = predict(best.svm, X_test)
+
+ssr_svm =  t(y_test - y_hat_svm) %*% (y_test - y_hat_svm)
+rsq_svm =  cor(y_test, y_hat_svm)^2
+
+sse_svm <- sum((y_hat_svm - y_test)^2)
+R2_svm <- 1 - sse_svm / sst
+
+# Evaluate performance
+performance <- cbind(performance, data.frame(SVM=postResample(pred = y_hat_svm, obs = y_test)))
+performance
+```
+
+From above result, we can see that SVM is giving better result than former models, which returns 0.5135 $R^2$.
+
+<br><br>
+
+### E. PCA (Principal Component Analysis)
+
+PCA is used to reduce dimension when there are a lot of predictors. It creates principal components (new variables) by getting the weighted averages of the original variables through their importance. It then finds a smaller number of numerical variables that contain most of the information by eliminating redundant variables. Basically PCA is used for classification problem, but we have `Principle Component Regression (PCR)` for regression based on PCA, using some of these components as predictors in a linear regression model fitted using the typical least squares procedure.
+
+Some of the most notable advantages of performing PCR are that it could reduce dimensionality, avoid multicollinearity between predictors and even mitigate overfitting issue. 
+
+<br>
+
+#### Fitting PCR and choose optimal number of components
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412)
+pca_model <- pcr(imdb_score~.,data=IMDB_train, scale=TRUE, center=TRUE,
+                 validation="CV")
+summary(pca_model)
+
+```
+
+In this model, we are able to explain up to 46.38% of the variance if we use all 36 components.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE, fig.width=8}
+par(mfrow=c(1,2))
+validationplot(pca_model,val.type = "MSEP")
+validationplot(pca_model,val.type = "R2")
+```
+
+How many components to pick is subjective, however, there is almost no improvement beyond PC35 but before that we can always observe some improvements when we include more components. And let's take a look at the score plot.
+
+```{r message=FALSE, warning=FALSE, include= TRUE, echo=TRUE,fig.height=10}
+scoreplot(pca_model, comps = 14:20)
+```
+
+From the above plot we can see that after including Component 17 & 18, the variance is not explained more and the model does not improve much, as we expected. So it is more ideal to choose 16 components to achieve parsimony and reduce dimensionality.
+
+<br>
+
+#### Testing on testing samples
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412)
+pca_model <- pcr(imdb_score~.,data=IMDB_train, ncomp=16, scale=TRUE, center=TRUE,
+                 validation="CV")
+
+# Predict using the testing data
+y_hat_pca = predict(pca_model, newdata=X_test)
+y_hat_pca = y_hat_pca[1:length(y_test),1,16]
+
+ssr_pca =  t(y_test - y_hat_pca) %*% (y_test - y_hat_pca)
+rsq_pca =  cor(y_test, y_hat_pca)^2
+
+sse_pca <- sum((y_hat_pca - y_test)^2)
+R2_pca <- 1 - sse_pca / sst
+
+# Evaluate performance
+performance <- cbind(performance, data.frame(PCA=postResample(pred = y_hat_pca, obs = y_test)))
+performance
+```
+
+The PCA model is not performing that well, and we can see that in the process of choosing components. Because all of the components are explaining similar variation of the data, dimensionality reduction does not improve the model much and even gives the worst results. The PCA model drops the dummy variables of genres and since genres are important factors in detecting the imdb score, it doesn't really make sense achieve parsimony in this dataset.
+
+
+<br><br>
+
+
+### F. Random Forest 
+
+Random forest can be used as an ensemble learning method for classification by establishing a multitude of decision trees at training time and outputting the class. It is efficient on large data bases. Random Forest consists of a large number of individual decision trees that operate as an ensemble and operates among multiple decision trees to find the optimal values by choosing the majority among them as the best value. Each decision tree under the random forest gives a values and random forest chooses the value that has the highest votes.
+
+
+Some of the most notable advantages of performing Random Forests are that it could mitigate overfitting issue and it usually shows better performance and have higher accuracy.
+
+
+We visualize the importance of the variables in the dataset by creating a default decision tree. The decision tree below shows the optimal splits in the data for each variable.
+
+#### Fitting Random Forest and find the optimal model
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+train_control <- trainControl(method = "cv",number = 5, search="grid")
+
+set.seed(412)
+rf_model <- train(x=X_train, y=y_train,method = "rf",
+                  preProcess = c("center", "scale"),
+                  trControl = train_control)
+
+print(rf_model)
+```
+The number of variables selected at each split is denoted by mtry in randomforest function. mtry = 19 gives the smallest RMSE value and highest $\R^2$ value. Thus, it is the optimal number of variables at each split.
+
+<br>
+
+#### Testing on testing samples
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Predict using the testing data
+y_hat_rf = predict(rf_model, newdata=X_test)
+
+ssr_rf =  t(y_test - y_hat_rf) %*% (y_test - y_hat_rf)
+rsq_rf =  cor(y_test, y_hat_rf)^2
+
+sse_rf <- sum((y_hat_rf - y_test)^2)
+R2_rf <- 1 - sse_rf / sst
+
+# Evaluate performance
+performance <- cbind(performance, data.frame(RandomForest=postResample(pred = y_hat_rf, obs = y_test)))
+performance
+```
+
+As seen from the results above, Random Forest gives the highest $R^2$ and lowest RMSE and MAE. It even beats our previous best model, SVM, which had 0.5135524 $R^2$. Random forest gives an $R^2$ of 0.5603316 which is still not very high but still the best among all of the models that we have tried.
+
+
+If we choose best model according to $R^2$, Random Forest will be the best model on testing samples.
+
+
+<br><br>
+
+
+## IV. Evaluating Model Performance - using CV
+
+In this part, in order to evaluate the model performances better we have used cross-validation to select the best model among the six models we have applied. Although we have used cross validation above when we built our models, we wanted to use 10-fold cross-validation this time instead of 5-fold.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+X = model.matrix(imdb_score ~ ., IMDB)[, -1]
+Y = IMDB$imdb_score
+```
+
+### A. Ridge with CV
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Perform 10-fold cross-validation on entire dataset
+set.seed(412)
+lambdas_to_try <- 10^seq(-3, 3, length.out = 100)
+
+ridge_cv = cv.glmnet(X, Y, alpha = 0, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 5)
+
+# Fit the optimal model
+ridge_cv <- glmnet(X, Y, alpha = 0, lambda = ridge_cv$lambda.min, standardize = TRUE)
+
+#Predict
+y_ridge_cv <- predict(ridge_cv, X)
+
+# Evaluate performance and save it
+cv_perf <- data.frame(Ridge_CV=postResample(pred = y_ridge_cv, obs = Y))
+cv_perf
+```
+
+<br>
+
+### B. LASSO with CV
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Perform 10-fold cross-validation on entire dataset
+set.seed(412)
+lambdas_to_try <- 10^seq(-3, 3, length.out = 100)
+
+lasso_cv = cv.glmnet(X, Y, alpha = 1, lambda = lambdas_to_try,
+                      standardize = TRUE, nfolds = 5)
+
+# Fit the optimal model
+lasso_cv <- glmnet(X, Y, alpha = 1, lambda = lasso_cv$lambda.min, standardize = TRUE)
+
+#Predict
+y_lasso_cv <- predict(lasso_cv, X)
+
+# Evaluate performance and save it
+cv_perf <- cbind(cv_perf, data.frame(LASSO_CV=postResample(pred = y_lasso_cv, obs = Y)))
+cv_perf
+```
+
+<br>
+
+### C. ElasticNet with CV
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Perform 10-fold cross-validation on entire dataset
+train_control <- trainControl(method = "cv",number = 5)
+
+set.seed(412)
+enet_cv <- train(x=X, y=Y, method = "enet",
+                 preProcess = c("center", "scale"),
+                 tuneLength = 15, trControl = train_control)
+
+
+#Predict
+y_enet_cv <- predict(enet_cv, X)
+
+# Evaluate performance
+cv_perf <- cbind(cv_perf, data.frame(ENET_CV=postResample(pred = y_enet_cv, obs = Y)))
+cv_perf
+```
+
+<br>
+
+### D. SVM with CV
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412)
+
+opt.svm_cv <- tune(svm, train.x=X, train.y=Y, cost=1:10,
+               tunecontrol=tune.control(sampling = "cross"), cross=5)
+
+# Find the optimal model
+best.svm_cv <- opt.svm_cv$best.model
+
+#Predict
+y_svm_cv = predict(best.svm_cv, X)
+
+# Evaluate performance
+cv_perf <- cbind(cv_perf, data.frame(SVM_CV=postResample(pred = y_svm_cv , obs = Y)))
+cv_perf 
+
+```
+<br>
+
+### E. PCA with CV
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412)
+
+pca_model_cv <- pcr(imdb_score~.,data=IMDB, scale=TRUE, center=TRUE,
+                 validation="CV")
+
+summary(pca_model_cv)
+
+validationplot(pca_model_cv,val.type = "R2")
+
+scoreplot(pca_model_cv, comps = 14:20)
+```
+
+```{r message=FALSE, warning=FALSE, TRUE, echo=TRUE,fig.height=10}
+set.seed(412)
+
+# Fit the optimal model, still with 16 components
+pca_cv <- pcr(imdb_score~.,data=IMDB, ncomp=16, scale=TRUE, center=TRUE,
+                 validation="CV")
+#Predict
+y_pca_cv <- predict(pca_cv, X)
+
+# Evaluate performance and save it
+cv_perf <- cbind(cv_perf, data.frame(PCA_CV=postResample(pred = y_pca_cv, obs = Y)))
+cv_perf
+```
+
+<br>
+
+### F. Random Forest with CV
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Perform 10-fold cross-validation on entire dataset
+
+train_control <- trainControl(method = "cv",number = 5, search="grid")
+
+set.seed(412)
+rf_cv <- train(x=X, y=Y, method = "rf",preProcess = c("center", "scale"),
+                  trControl = train_control)
+
+#Predict
+y_rf_cv <- predict(rf_cv, X)
+
+# Evaluate performance and save it
+cv_perf <- cbind(cv_perf, data.frame(RandomForest_CV=postResample(pred = y_rf_cv, obs = Y)))
+cv_perf
+```
+
+
+### Results:
+
+Our 5-fold cross-validation gives similar results to our previous findings in terms of the best model.
+
+As seen from the results above, Random Forest still gives the highest $R^2$ and lowest RMSE and MAE. But this time with 5-fold cross-validation, we were able to achieve an $R^2$ of 0.9495742 which is a huge improvement and is a indicator of how well Random forest works when trained on other folds of training samples. With 5-fold cross-validation, the $R^2$ of SVM model has improved a lot as well with an increase to 0.6464760. The PCA model performs very poorly since we already don't have many predictors and elimination of genres dummies result in poor performance in PCA. 
+
+If we choose best model according to $R^2$, clearly Random Forest will be the best model among the all six models we have performed. It explained 94.9 % of the variations. 
+
+<br><br>
+
+## V.Conclusion and Future Work
+
+
+For this paper, we wanted to analyzed the ability of 6 models to predict IMDB Scores of the movies. We have utilized regularization techniques such as Ridge, Lasso, Elastic Net and also adopted PCA, SVM and Random Forest models. With 10-fold cross-validation, we were able to explain 94.9 % of the variation in the data which was a great success. We believe that using random forest model can help the film industry to create successful movies and understand the important factors that makes a movie to have a higher IMDB score. 
+
+For our dataset, we have understood that PCA model was not performing well since we didn't have many predictors already and dropping genres dummies with PCA model resulted in dropping an important variable. Since genres are improtant factors that makes a movie successful, dimensionality reduction did not help us much. Our analysis can still be improved with more sophisticated methods such as neural networks or KNN. These methods can be added to improve our outcomes in the future and to help the film industry as well. 
+
+<br><br>
+
+## VI. Reference
+- https://data.world/data-society/imdb-5000-movie-dataset
+
+
+
+
+
+
+
+
+
+
+
+

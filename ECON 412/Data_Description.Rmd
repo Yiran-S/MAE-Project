@@ -1,0 +1,285 @@
+---
+title: "Final project"
+author: 
+- LIU, YIPING
+- LATIFI, ROYA
+- SUN, YIRAN
+date: "`r format(Sys.Date(),'%b %d,%Y')`"
+output: 
+  rmarkdown::html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: Black;
+  text-align: center;
+}
+
+h4.author { /* Header 4 - and the author and data headers use this too  */
+  font-size: 20px;
+  color: Black;
+  text-align: center;
+}
+
+h4.date { /* Header 4 - and the author and data headers use this too  */
+  font-size: 18px;
+  color: Gray;
+  text-align: center;
+}
+
+body { 
+  font-size: 14pt;
+  lineheight: 14p;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(ggplot2)
+library(lares)
+library(psych)
+
+library(reshape) #for heatmap
+library(glmnet)
+library(MASS)
+library(class)
+library(FNN)
+library(stats)
+library(fpc)
+library(e1071)
+library(dplyr)
+library(corrplot)
+
+```
+
+# 3 Introduction 
+
+## 3.1 problem statement
+
+### 3.1.1 Experiment Background
+
+The experiments have been carried out with a group of 30 volunteers within an age bracket of 19-48 years. Each person performed six activities (WALKING, WALKINGUPSTAIRS, WALKINGDOWNSTAIRS, SITTING, STANDING, LAYING) wearing a smartphone (Samsung Galaxy S II) on the waist. Using its embedded accelerometer and gyroscope, researchers captured 3-axial linear acceleration and 3-axial angular velocity at a constant rate of 50Hz. The experiments have been video-recorded to label the data manually. 
+The sensor signals (accelerometer and gyroscope) were pre-processed by applying noise filters and then sampled in fixed-width sliding windows of 2.56 sec and 50% overlap (128 readings/window). The sensor acceleration signal, which has gravitational and body motion components, was separated using a Butterworth low-pass filter into body acceleration and gravity. The gravitational force is assumed to have only low frequency components, therefore a filter with 0.3 Hz cutoff frequency was used. From each window, a vector of features was obtained by calculating variables from the time and frequency domain.
+
+<br>
+
+### 3.1.2 Data Description 
+
+We got this database, "Human Activity Recognition", from UCI machine learning dataset. The Human Activity Recognition database was built from the recordings of 30 study participants performing activities of daily living (ADL) while carrying a waist-mounted smartphone with embedded inertial sensors. The objective is to classify activities into one of the six activities performed.
+
+There was totally 563 variables in our database, with 561 features from the accelerometer and gyroscope and some calculation methods. And there is one "subject" column identifying the participants. The dependent variable is named "activity" at last, including six activities, WALKING, WALKINGUPSTAIRS, WALKINGDOWNSTAIRS, SITTING, STANDING, LAYING. 
+
+The researchers obtained features in the following steps: 
+- (i) Firstly, features selected come from the accelerometer and gyroscope 3-axial raw signals tAcc-XYZ and tGyro-XYZ. These are time domain signals captured at a constant rate of 50 Hz. Then they were filtered using a median filter and a 3rd order low pass Butterworth filter with a corner frequency of 20 Hz to remove noise.'-XYZ' is used to denote 3-axial signals in the X, Y and Z directions.
+
+- (ii) Then are the acceleration signals, tBodyAcc-XYZ and tGravityAcc-XYZ, they were seperated into body and gravity accelerations features by another low pass Butterworth filter with a corner frequency of 0.3 Hz. 
+
+- (iii) Thirdly, researchers obtained Jerk Signals, tBodyAccJerk-XYZ and tBodyGyroJerk-XYZ, which are the body linear acceleration and angular velocity derived in time. 
+
+-(iv) Subsequently, the Euclidean norm calculation method has been included to get tBodyAccMag, tGravityAccMag, tBodyAccJerkMag, tBodyGyroMag, tBodyGyroJerkMag. These five variables show the magnitude of these three-dimensional signals.
+
+-(v) Finally, another method, a Fast Fourier Transform (FFT) was applied. And fBodyAcc-XYZ, fBodyAccJerk-XYZ, fBodyGyro-XYZ, fBodyAccJerkMag, fBodyGyroMag, fBodyGyroJerkMag variables have been generated. Here,  the 'f' to indicate frequency domain signals. 
+
+After getting all the features, researchers calculate the mean, standard deviation, signal magnitude etc for each repeating experiments. These calculation results, along with the data obtained from Euclidean norm and Fast Fourier Transform are the ones included in these data base. The description of abbreviation from data processing methods are listed as below: 
+
+* mean(): Mean value
+
+* std(): Standard deviation
+
+* mad(): Median absolute deviation
+
+* max(): Largest value in array
+
+* min(): Smallest value in array
+
+* sma(): Signal magnitude area
+
+* energy(): Energy measure. Sum of the squares divided by the number of values. 
+
+* iqr(): Interquartile range 
+
+* entropy(): Signal entropy
+
+* arCoeff(): Autorregresion coefficients with Burg order equal to 4
+
+* correlation(): correlation coefficient between two signals
+
+* maxInds(): index of the frequency component with largest magnitude
+
+* meanFreq(): Weighted average of the frequency components to obtain a mean frequency
+
+* skewness(): skewness of the frequency domain signal 
+
+* kurtosis(): kurtosis of the frequency domain signal 
+
+* bandsEnergy(): Energy of a frequency interval within the 64 bins of the FFT of each window.
+
+* angle(): Angle between to vectors.
+
+The obtained data base has been randomly partitioned into two sets, where 70% of the volunteers was selected for generating the training data and 30% the test data. As we can see from the "dim" function, the train data has 7352 observations and the testing dataset has 2947 observations. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## load dataset
+#setwd("C:/Users/evayp/Desktop/final project")
+da.train <- read.csv("train.csv")
+da.test <- read.csv("test.csv")
+
+all <- rbind(da.train,da.test) #combine train and test data 
+dim(da.train)
+dim(da.test)
+head(all)
+```
+
+#### Checking Missing Values
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## checking for NAs in the whole dataset
+a <- names(all)
+b <- data.frame()
+null_df <- data.frame()
+for (i in a){
+  c <- sum(is.na(all[,i]))
+  b <- data.frame("Feature name"=i,"num of NAs"=c)
+  null_df <-rbind(null_df,b)}
+print(null_df)
+print(sum(null_df[,2]))
+### As we can see from the printing results, there is no NA in our dataset. 
+```
+
+#### Simple Description
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+describe(all)
+```
+We don't need to normalize the data.s
+
+#### Investigating correlations
+
+After generating a basic idea from the data description in words, we are going to investigate the correlations among these variables and produce some visualization for our variables to gain a deeper view for these. At first, we use the "findCorrelation" from caret library to return the pairs of variables with significant correlation in the whole data base.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+findCorrelation(all[,c(1:562)],cutoff = 0.95,verbose = FALSE,names = TRUE)
+```
+
+From the results, we notice that in general, variables in the same experiment procedure tend to obtain significant correlations. So next, we are going to visualize top correlated variables based on experiment process. 
+
+**(1) tBodyAcc-XYZ and tGravityAcc-XYZ**
+
+From the experiment description, we know researcher first get the accelerometer and gyroscope 3-axial raw signals and then transformed them into tBodyAcc-XYZ and tGravityAcc-XYZ with mean, standard deviation, median absolute deviation etc calculations. So initially, we would like to see the corelations among this variables. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+
+tbg<-all[,c(1:80)] #abbreviation of tBody and tGravity
+
+corr_cross(tbg, # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 15 # display top 10 couples of variables (by correlation coefficient)
+)
+
+```
+
+From this plot, we could see most highly correlated variables are gravity acceleration signals. 
+
+Only arCoefficiencies in Z axis have the negative correlations in the top 15 couples. 
+
+
+**(2) Jerk signals: tBodyAccJerk-XYZ and tBodyGyroJerk-XYZ**
+
+Subsequently, researchers obtain Jerk Signals to analyze linear acceleration and angular velocity. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+jerk<-all[,c(81:200)]
+corr_cross(jerk, # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 15 # display top 15 couples of variables (by correlation coefficient)
+)
+```
+
+From this picture, we know in general, standard deviation and median absolute deviation in the same axis return the highest correlation. And X axis correlate more closely than other axis. 
+
+**(3) Magnitude**
+
+Then the scientists calculate the Euclidean norm to investigate the magnitude of three dimensional signals. The variables are named as tBodyAccMag, tGravityAccMag, tBodyAccJerkMag, tBodyGyroMag, tBodyGyroJerkMag. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+mag<-all[,c(201:265)]
+corr_cross(mag, # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 15 # display top 15 couples of variables (by correlation coefficient)
+)
+```
+
+As for different type of Euclidean norm, we notice that tBodyAccMag has the highest correlation with tGravityAccMag.
+
+**(4)Fast fourier transform**
+
+In the last step of this experiment, researchers applied FFT to these signals and also averaged the signals in a signal window sample to get the angle variable. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+fft<-all[,c(266:561)]
+corr_cross(fft, # name of dataset
+  max_pvalue = 0.05, # display only significant correlations (at 5% level)
+  top = 15 # display top 15 couples of variables (by correlation coefficient)
+)
+```
+
+We notice that correlation of the top three pairs is 1, and that energy of a frequency interval with 1 and 24 bins of the FFT of each window seem to have high correlation with fBodyAcc and fBodyGyro energy in x axis. 
+
+After visualizing the dependent variable, we would like to attempt some visualization for our dependent variable, "activity".
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+
+da.train$Partition = "Train"
+da.test$Partition = "Test"
+ind.all = rbind(da.train,da.test) #create another dataset for independent variable visualization 
+# with test and train data partition
+ind.all$Partition = as.factor(ind.all$Partition)
+qplot(data = ind.all, x = subject, ylab="count",fill = Partition)
+qplot(data = ind.all , x = subject, fill = Activity)
+
+```
+
+The total number of experiments performed on testing participants is approximately 1:3 to the one for training participants.
+
+The first plot tells us the testing data has been selected from participants all with subject id 2,4,9,10,12,13,18,20,24. But since we have no idea if different people have different preference while making guestures, we decide to split the whole dataset into training and testing smaples randomly again.  
+
+From the second plot, we could see that each participants have go through the experiments with all six activities in an even distribution. 
+
+#### Split training and testing dataset
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+
+set.seed(412.3)
+train.index <- sample(c(1:dim(all)[1]), dim(all)[1]*0.8)
+
+train.data <- all[train.index,]
+valid.data <- all[-train.index, ] 
+
+# check if training contains all the subject
+da.train <- train.data
+da.test <- valid.data
+
+da.train$Partition = "Train"
+da.test$Partition = "Test"
+
+ind.all = rbind(da.train,da.test) #create another dataset for independent variable visualization 
+# with test and train data partition
+ind.all$Partition = as.factor(ind.all$Partition)
+qplot(data = ind.all, x = subject, ylab="count",fill = Partition)
+#qplot(data = train.data, x = subject, ylab="count")
+#qplot(data = ind.all , x = subject, fill = Activity)
+
+```
+
+Now they both contains all subjects.
+

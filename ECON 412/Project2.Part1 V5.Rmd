@@ -1,0 +1,686 @@
+---
+title: "ECON 412 Fundamentals of Big Data: Project 2, Part 1-Classification"
+author: 
+- LIU, YIPING
+- LATIFI, ROYA
+- SUN, YIRAN
+date: "`r format(Sys.Date(),'%b %d,%Y')`"
+output: 
+  rmarkdown::html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: Black;
+  text-align: center;
+}
+
+h4.author { /* Header 4 - and the author and data headers use this too  */
+  font-size: 20px;
+  color: Black;
+  text-align: center;
+}
+
+h4.date { /* Header 4 - and the author and data headers use this too  */
+  font-size: 18px;
+  color: Gray;
+  text-align: center;
+}
+
+body { 
+  font-size: 14pt;
+  lineheight: 14p;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(reshape) #for heatmap
+library(glmnet)
+library(MASS)
+library(class)
+library(FNN)
+library(stats)
+library(fpc)
+library(e1071)
+library(dplyr)
+library(caret)
+```
+
+# Part I. Classification
+
+## I. Introduction
+
+For this classification project, we are going to work with the following five models in both parametric and non-parametric parts based on one classification type dataset. 
+
+The models we are going to go over with are Logistic Regression, Linear Discriminant Analysis (LDA), Quadratic discriminant analysis (QDA), K-nearest neighbors (KNN), and K-means clustering models. These models combine both parametric and non-parametric algorithms. 
+We have two main objects in this analysis. The first is to figure out whether a linear or a non-linear model is performing better in our dataset, mainly from our first four models, since Logistic, LDA, and QDA are parametric models, LDA is linear model but Logistic and QDA are non-linear models. The second one is by using k-means clustering, we are going to find out if the initial classification in our dataset is optimal. 
+
+In our essay, there are mainly three parts. Firstly, we are going to describe our dataset and the variables we set. Then we will work with logistic regression, LDA, qda and knn models and compare their accuracy. After that, we are going to set the last model, k means, and discuss the rational number of classes chosen by this model. 
+
+<br><br>
+
+## II. Data Input
+
+### A. Data description
+
+Out of interest, we choose a dataset from Kaggle relevant to mobile price to do our research. The data is collected from the sales market of mobile phones from various companies such as Apple, Samsung, etc. From this dataset, we could find out some relation between features of a mobile phone(eg:- RAM, Internal Memory, etc) and its selling price. And the relations will be helpful to estimate the price of mobiles for sales in the competitive market and figure out which variables are more useful in prediction. 
+There are 20 variables and 2000 data in the original mobile dataset, some are continuous and numerical variables and others are separate and categorical. 
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# load training and testing data for analysis 
+#setwd("C:/Users/evayp/Desktop/classification")
+da <- read.csv("mobile.csv")
+head(da)
+dim(da)
+```
+
+Directly after loading the dataset, we need to check whether there are some NAs in the dataset and process it. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## checking for NAs
+a <- names(da)
+b <- data.frame()
+null_df <- data.frame()
+for (i in a){
+  c <- sum(is.na(da[,i]))
+  b <- data.frame("Feature name"=i,"num of NAs"=c)
+  null_df <-rbind(null_df,b)}
+print(null_df)
+### As we can see from the printing results, there is no NA in our dataset. 
+```
+
+<br>
+
+The **predictive variable** is price range, which has 4 categories, 0,1,2,3.
+
+**categorical variables:**
+
+* blue: whether the mobile's color is blue
+
+* dual sim: whether the mobile include two sim cards
+
+* four_g: whether the mobile support 4G internet
+
+* three_g: whether the mobile support 3G internet
+
+* touch screen: whether the mobile is screen touch available 
+
+* WI-FI: whether the mobile could connect with WI-FI.
+
+<br>
+
+**numerical variables:**
+
+* battery power: Total energy a battery can store in one time measured in mAh (condition of mobile battery)
+
+* clock speed: speed at which microprocessor executes instructions (clock condition of the mobile)
+
+* fc: Front Camera mega pixels
+
+* int memory: Internal Memory in Gigabytes (memory size of the mobile)
+
+* m_dep: Mobile Depth in cm
+
+* mobile weight: the weight of the mobile
+
+* n_cores: the number of cores in the mobile
+
+* pc: Primary Camera mega pixels
+
+* px height: Pixel Resolution Height
+
+* ram: Random Access Memory in Megabytes
+
+* sc_h: Screen Height of mobile in cm
+
+* sc_w: Screen Width of mobile in cm
+
+* talk time: longest time that a single battery charge will last when you are
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## the basic view about the variables we select
+head(da)
+summary(da)
+``` 
+
+<br>
+
+From the summary results, we could see:
+
+* The median of price range in the data is 1.75 and the mean is 1.50, showing that the phones we analyze are commonly purchased in the market. 
+
+* The mean of battery power is 1238.5 and that of internal memory is 32.05. 
+
+* More than 50% of the mobiles are dual sim. 
+
+* The average number of Front Camera mega pixels is 3 while primary camera mega pixels is 9.96. 
+
+* In the average level, mobiles have 645.1 internal memory size and could support 11 hours talking. 
+
+* The average px_height is 645.1 and width is 1251.5. 
+
+* The average size of screen is 12.31 height and 5.77 width. 
+
+* Mobile depth has the mean of 0.50 and mean weight is 140.2.
+
+* 76.15% of mobiles have three G internet connection and 50.3% of them are available for screen touch.
+
+<br><br>
+
+### B. variables Selection
+
+At first, we are going to check the correlations between independent and dependent variables. Then we will select the variables with highest correlations. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## choosing independent variables by comparing correlation 
+cor_ <- cor(da, method = 'pearson')
+cor_[,21]
+```
+
+* From the correlation results, we could see that ram has the highest correlation with mobile price and the mean of ram is 2124. 
+
+* But some variables have little correlation with mobile's selling price, and we are going to drop them since they make a little contribution to the models. 
+
+<br>
+
+After comparison, We decide to drop blue, clock_speed, dual_sim, fc, four_g, m_dep, n_cores, sc_h, talk_time, three-g and wifi based on the correlation with price range. 
+
+Then there are totally 9 independent variables in our dataset, which are battery_power, int_memory, mobile_wt, pc, px_height, px_width, ram, sc_w, touch_screen. Among them, only touch_screen is categorical variable and others are numerical variables. 
+
+We can have a direct view about the correlations in the heatmap. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE,fig.height=7}
+## plot the heat map
+selectvar <- c(1,7,9,11,12,13,14,16,19,21)
+data <- da[selectvar]
+
+corr <- melt(cor(data))
+par(mar=c(0,0,0,0))
+ggplot(corr, aes(x=X1,y=X2,fill=value))+
+  geom_tile()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=0.25))+
+  geom_text(aes(fill = round(corr$value,2),label = round(corr$value,3)),size=4)
+```
+
+<br>
+
+**Distribution of Dependent Variable**
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+par(mfrow=c(2,2))
+hist(da$battery_power)
+hist(da$int_memory)
+hist(da$mobile_wt)
+hist(da$pc)
+hist(da$px_height)
+hist(da$px_width)
+hist(da$ram)
+hist(da$sc_w)
+
+ggplot(da, aes(x = factor(da$touch_screen))) +
+  geom_bar()+
+  ggtitle("Distribution of touch_screen")
+```
+
+From the histograms of our dependent variables, we could see that most of the variables we select are distributed evenly. Only the frequency of `px_weight` and `sc_w` declining as number becoming larger, but they make sense since, in the real world, the mobiles with large weight and screen width are less common.
+
+<br>
+
+**Distribution of Dependent Variable**
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+ggplot(da, aes(x = factor(da$price_range))) +
+  geom_bar()+
+  ggtitle("Distribution of Price range")
+```
+
+
+As shown in the histogram of our predictable variable, mobiles' price range distributes evenly in these four groups. 
+
+<br>
+
+### C. Data Preparation
+
+Since we have eight numerical variables and one categorical variable, it would be better for us to normalize the numerical ones and set the variables in the same range scale. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#Transform Data
+da$price_range<-as.factor(da$price_range)
+
+min_max_norm <- function(x) {(x - min(x)) / (max(x) - min(x))
+  }
+
+#apply Min-Max normalization
+data <- as.data.frame(lapply(data[,1:8], min_max_norm))
+
+data <- cbind(data, da$touch_screen,da$price_range)
+
+names(data)[names(data)=="da$touch_screen"] <- "touch_screen"
+names(data)[names(data)=="da$price_range"] <- "price_range"
+
+head(data)
+```
+
+Then we would like to split our data into the training and validation part at first. In the training dataset, we would like to include 60% of the whole data, at the rest is used for validation. 
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# split our data randomly
+set.seed(123)
+
+train.index <- sample(c(1:dim(data)[1]), dim(data)[1]*0.6)
+train.data <- data[train.index,]
+valid.data <- data[-train.index,]
+```
+
+After splitting randomly, we check for the distribution of the predictable variable to make sure it is evenly distributed into 2 sets. 
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# check
+ggplot(train.data, aes(x = factor(train.data$price_range))) +
+  geom_bar()
+
+ggplot(valid.data, aes(x = factor(valid.data$price_range))) +
+  geom_bar()
+```
+
+
+The histograms of the two support the even distribution requirement. 
+
+<br><br>
+
+## III. Model Fitting 
+
+### A. logistic Regression
+
+Logistic Regression is one of the most common models used when the dependent variable is categorical. 
+
+The output from Logistic Regression is the estimated probability. From the output, we could see the probability of mobiles' selling price range given the independent variables we selected. 
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+x.train = as.matrix(train.data[,1:9])
+y.train = train.data$price_range
+head(x.train)
+```
+
+<br>
+
+#### Fit the train data
+
+Firstly, we fit our training data into the model. Since the dependent variable has 4 classes, we use `glmnet` function rather than `glm` for better analysis. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE,fig.height=6}
+glm.fits = glmnet(x=x.train, y=y.train, family="multinomial")
+
+par(mfrow=c(2,2))
+plot(glm.fits,label = TRUE)
+par(fig = c(0, 1, 0, 1), oma = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), new = TRUE)
+plot(0, 0, type = 'l', bty = 'n', xaxt = 'n', yaxt = 'n')
+legend('bottom',legend = names(train.data[,1:9]),xpd = TRUE, horiz = TRUE, cex = 1)
+```
+
+We can observe from the plots that the `ram`,`battery_power`, `px_height` and `px_width` always have great influence on each class.
+
+Then, we would like to get the prediction results and compare with the classification in our training data to figure out the prediction accuracy of logistic regression model. 
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# have a basic view about the prediction for the training data
+sample.error <- predict(glm.fits, newx = x.train, type = "class",s=0)
+confMat <-confusionMatrix(factor(sample.error), y.train)
+print(confMat)
+```
+
+
+From the confusion matrix, we could see the accuracy of Logistic regression model for the training dataset is 98.58%. As the k values here are both about 0.9811 , we can say our model does a fairly good job.
+ 
+#### Predict on validation set 
+
+Then, we would like to test this model in the validation dataset to see its out of sample prediction performance.
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+#predict on validation set
+x.valid = as.matrix(valid.data[,1:9])
+
+valid.pred <- predict(glm.fits, newx = x.valid, type = "class", s=0)
+confMat.valid <-confusionMatrix(factor(valid.pred), valid.data$price_range)
+print(confMat.valid)
+
+# save it in a new df
+model <- data.frame(Logistic=confMat.valid$overall[1])
+model
+```
+
+From the confusion matrix, we could see the accuracy of prediction for in validation dataset is 97.62%. And the Kappa value is still high as 0.9683.
+
+<br><br>
+
+### B. Linear Discriminant Analysis(LDA)
+ 
+Linear Discriminant Analysis(LDA) works similarly to logistic regression. But in our dataset, we notice that our classes are well-separated. In this situation, the parameter of the logistic regression model may not be stable. We use LDA to solve this potential problem. Also, LDA is more commonly used to solve multiple classification problems. 
+
+<br>
+
+#### Fit the train data
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+### LDA regression in the training dataset
+lda.fit = lda(price_range~battery_power+int_memory+mobile_wt+pc+px_height+px_width+ram+sc_w+touch_screen,data=train.data)
+lda.fit
+```
+
+We get the estimated parameters of each independent variables in the training set and then we would like to keep these parameters for price range prediction. 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# After establishing the model, we use it into prediction
+lda.sample.error <- predict(lda.fit, newx = x.train, type = "class")
+lda.confMat <-confusionMatrix(factor(lda.sample.error$class), y.train)
+print(lda.confMat)
+```
+
+
+From the confusion matrix of LDA, we know its accuracy is 95.75%, which is a little bit lower than that in logistic regression. And also, the k value is lower but still quite high.
+
+<br>
+
+#### Predict on validation set 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+### predict in validation data
+x.valid = valid.data[,1:9]
+valid.lda.pred <- predict(lda.fit, x.valid, type = "class")
+
+valid.lda.confMat <-confusionMatrix(factor(valid.lda.pred$class),factor(valid.data$price_range))
+print(valid.lda.confMat)
+
+# save it in the df
+model <- cbind(model, data.frame(LDA=valid.lda.confMat$overall[1]))
+model
+```
+
+From the confusion matrix, ,we know that when we fit the model in training part and predict them with validation data, the accuracy is 92.88%, which is also lower than Logistic Regression. 
+
+<br><br>
+
+### C. Quadratic discriminant analysis(QDA) 
+
+Quadratic discriminant analysis (QDA) is closely related to Linear Discriminant analysis (LDA), it is also a general version of the linear classifier.
+
+In prior analysis, LDA assumes that every class has the same variance and covariance. However, this assumption is not always true. The quadratic analysis solves this problem by building a quadratic decision surface to separate measurements.
+
+Based on this feature, LDA usually works better when the variances are similar among classes or the size of the data is not large enough to accurately estimate the variances. While QDA outperforms when the variances are very different between classes and the dataset is large enough to accurately estimate the variances.
+
+We would like to run QDA model to figure out whether it has a better performance than LDA.
+
+<br>
+
+#### Fit the train data
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## QDA set up for the training dataset
+qda.fit=qda(price_range~battery_power+int_memory+mobile_wt+pc+px_height+px_width+ram+sc_w+touch_screen,data=train.data)
+qda.fit
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# After establishing the model, we use it to prediction
+qda.sample.error <- predict(qda.fit, newx = x.train, type = "class")
+qda.confMat <-confusionMatrix(factor(qda.sample.error$class), y.train)
+print(qda.confMat)
+```
+
+The accuracy of QDA prediction in the training data is 97.25%. Recalling the 95.75% accuracy of LDA model, QDA generates a better performance. 
+
+Then we evaluate the model in validation part to see if it performs better as well. 
+
+<br>
+
+#### Predict on validation set 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# validation data predict
+valid.qda.pred <- predict(qda.fit, valid.data, type = "class")
+valid.qda.confMat <-confusionMatrix(factor(valid.qda.pred$class),factor(valid.data$price_range))
+print(valid.qda.confMat)
+
+# save it in the df
+model <- cbind(model, data.frame(QDA=valid.qda.confMat$overall[1]))
+model
+```
+
+<br>
+
+The prediction accuracy in validation dataset is 94.25%. Comparing the accuracy between LDA and QDA, we notice that QDA generates a better prediction results than LDA, which also proves that the assumption of LDA may not hold in this data. 
+
+<br><br>
+
+### D. K-Nearest Neighbor(KNN)
+
+Different from the prior models which are parametric models, K-Nearest Neighbor (KNN) is a non-parametric approach and it works well when the decision boundary is highly non-linear. 
+
+Based on the accuracy table, we could see that QDA has a better performance than LDA, which represents that the true decision boundary of our data is at least moderate non-linear. We would like to test in KNN model to find out the level of non-linearity of this decision boundary. 
+
+For KNN model, we need to choose the optimal number of K to establish the model at first. We build a for loop and compare the accuracy of different Ks to select the best one. 
+
+<br>
+
+#### Fit the train data and test on the validation set
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# initialize a data frame with two columns: k, and accuracy.
+accuracy.df <- data.frame(k = seq(1, 14, 1), accuracy = rep(0, 14))
+
+# compute knn for different k on validation.
+x.valid = valid.data[,1:9]
+
+for(i in 1:14) {
+  knn.pred <- knn(x.train, x.valid, cl = y.train, k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, factor(valid.data$price_range))$overall[1] 
+}
+accuracy.df
+
+#save the max knn accuracy to df_model
+match(max(accuracy.df$accuracy),accuracy.df$accuracy)
+model <- cbind(model, data.frame(kNN_13=max(accuracy.df$accuracy)))
+model
+
+```
+
+
+From the table, we could see the model accuracies when K ranges from 1 to 14. And when k=13, it returns the highest accuracy result. 
+From the accuracy of kNN model of the optinal K=13, we could see it does not perform better than our former models. We infer that the decision boundary of this data set is not extremely non-linear. 
+
+<br><br>
+
+### E. K-Means
+
+K-means is another non-parametric method. Different from KNN, k means works to solve clustering problems and it belongs to unsupervised learning. 
+
+K-means model aims to partition observations into k clusters, where each observation belongs to the cluster with the nearest mean. K-means clustering minimizes the squared Euclidean distances and spilled the data space into Voronoi cells. 
+
+Refer to our dataset, since the price range of the mobile's selling prices are divided by the author of the data and is not the kind of classification which could not be changed, such as some famous machine learning problems, categories of fish and flowers, etc. We would like to find out whether 4 groups are the optimal number of classification based on the information from the dependent variables. if not, which number would be more suitable for mobile price classification.
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# fit on training data
+set.seed(1234)
+
+km.within <- rep(0,19)
+for (i in 2:20){
+  km <- kmeans(x.train,centers=i)
+  km.within[i-1] <- km$tot.within}
+
+plot(1:19, km.within, type="b", xlab="Number of Clusters",
+     ylab="Within groups sum of squares")
+```
+
+
+Even though we have given the Number of Clusters beforehand, we have various methods to find the right number of Clusters. Finding the right number of clusters helps in explains much of the variance of the data and also helps in getting more distinct clusters.
+
+The model now gives us k=20 as the best clusters, which is not the same as what we have as 4.
+
+<br><br>
+
+### Model Comparison
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+model
+```
+
+From the result, we can see that `Logistic Model` is performing best, giving highest accuracy. So we may say from our training and validation set, the non-linear parameter model is best in our case.
+
+<br><br>
+
+## IV.Cross-Validation/ Bootstrapping Test
+
+In the III part of our project, we go over five models, Logistic regression, LDA, QDA, KNN, and K-means. Establish the models, and get prediction results for training and validation data. Though we divide the data into these two parts randomly, there are only two samples and the results are not always duplicable. To solve this problem, we would like to evaluate the model by 10 fold cross-validation to increase the generalization ability of our models and make the accuracy results more convincing.  
+
+<br>
+
+### A. CV for Logistic Model
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+### evaluate model performance via 10-fold CV
+set.seed(1234) 
+train.control <- trainControl(method = "cv", number = 10)
+
+# Train the model
+logit.model <- train(price_range~., data=data, method = "glmnet",
+                     trControl = train.control)
+print(logit.model)
+
+# save it in the model df
+model["CV Accuracy",1] <- max(logit.model$results["Accuracy"])
+model
+```
+
+
+From the 10-fold cross-validation results, we could see the accuracy of the model is 0.9760 and the lambda it choose is 0.0006173.
+
+From the output, we can see that the model is overall performing well.
+
+<br>
+
+### B. CV for LDA
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+### 10-fold cross-validation in LDA
+set.seed(1234) 
+train.control <- trainControl(method = "cv", number = 10)
+
+# Train the model
+lda.model <- train(price_range~., data=data, method = "lda",trControl = train.control)
+print(lda.model)
+
+# save it in the model df
+model["CV Accuracy",2] <- max(lda.model$results["Accuracy"])
+model
+```
+
+Using cross validation method, we get the accuracy of LDA model is 94.8%. Compared with our original model, we can say that our original model is not that bad.
+
+<br>
+
+### C. CV for QDA
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## 10-fold cross validation 
+set.seed(1234) 
+train.control <- trainControl(method = "cv", number = 10)
+
+# Train the model
+qda.model <- train(price_range~., data=data, method = "qda",trControl = train.control)
+print(qda.model)
+
+# save it in the model df
+model["CV Accuracy",3] <- max(qda.model$results["Accuracy"])
+model
+```
+
+
+The score of QDA cross validation is 96.1%, which is a little bit higher than LDA, and further proves our prior conclusion.
+
+<br>
+
+### D. CV for Knn
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+### cross validate knn
+x <- data[,1:9]
+y <- factor(data[,10])
+knn.model <- tune.knn(x, y, k = 1:15, tunecontrol=tune.control(sampling = "cross"), 
+                   cross=10)
+summary(knn.model)
+plot(knn.model)
+
+# save it 
+model["CV Accuracy",4] <- 1-knn.model$best.performance
+model
+
+```
+
+We could see from 10-fold cross-validation result that the best k for knn is 13, and it has the smallest error of 0.23. 
+
+From the final accuracy table, we could see that validation accuracy and cross-validation accuracy results are identical. Logistic regression has the highest score in this classification problem. Since QDA performs better than LDA and KNN, we infer that the true boundary in this data is moderate non-linear. 
+
+<br>
+
+### E. Bootstrapping for K-Means
+
+The reason we are utilizing bootstrapping to test K-means is that as an unsupervised algorithm, it is not built for CV. And bootstrap is a good way to help us increase the sample size and 
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+
+set.seed(1234)
+
+kmboot <- clusterboot(x, clustermethod=kmeansCBI, runs=50, iter.max=100,
+                     krange=1:20,count=FALSE, seed=1234)
+
+kmboot$result
+```
+
+<br><br>
+
+## Conclusion
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+model
+```
+
+
+From the analysis above, we can see that for the supervised problem solving part, the parametric non-linear model `Logistic` works best in our case. It has the highest accuracy both from the validation data and from the 10-fold cross validation. Besides this main conclusion, we also notice that QDA has better score than LDA and KNN when K=13. According to the theoretical relationship between data boundary and model performance, we infer that our data set may have a moderate non-linear true boundary. 
+
+As for k-means, the unsupervised problem solving part in our analysis, the cluster number of four does not generate a high score in validation. When we let the k-means model choose the optimal k for us, we could see that four groups setting may not be the best one. The sum of squares decreases as the number of k increases. And this suggests us to split the data with more price ranges to better estimate the mobile prices based on the features in this data. And when we use bootstrapping to validate the k-means result, we come up with a different best number of clusters, which is 2. And this kind of cluster is mostly based on the `touch-screen`. So we will not say that K-means is meaningful in our dataset.
+
+<br><br>
+
+## Reference
+
+[1] https://www.kaggle.com/iabhishekofficial/mobile-price-classification
