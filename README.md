@@ -1,41 +1,41 @@
 # MAE Project
 Projects Finished in UCLA, MAE During following courses:
 
+**2020 Fall:**
 <br>
 
-**Fall:**
-<br>
+ECON 430 *Applied Statistics, Econometrics, and Time Series with R and Python* 
 
-ECON 430 Applied Statistics, Econometrics, and Time Series with R and Python 
+ECON 402 *Macroeconomic Theory* 
 
-<br>
-
-ECON 402 Macroeconomic Theory 
-
-<br>
-
-ECON 441 Applied Data Management for Economists 
+ECON 441A *Applied Data Management for Economists* 
 
 <br>
 
-**Winter:**
+**2020 Winter:**
 
-ECON 441B Applied Data Management for Economists:
+ECON 441B *Applied Data Management for Economists*
 
-<441Visualization_YiranSun.ipynb>
 
-<441WebScrapping_YiranSun.ipynb>
+ECON 442B *Master of Applied Economics Finance Laboratory*
 
-<br>
 
-ECON 442B Master of Applied Economics Finance Laboratory:
-
-<Econ 442B Unemployment Project1 .ipynb>: Output.xlsx is the dataset.
-
-<Econ 442B ML Forecast Project2.ipynb>: Dataset_442B.xlsx is the dataset.
+ECON 425 *Machine Learning*: the dataset is available online.
 
 <br>
 
-ECON 425 Machine Learning:
+**2021 Spring:**
 
-<425Project_Final.ipynb>, for which the dataset is available online.
+ECON 412 *Fundamentals of Big Data*
+
+
+ECON 434 *Machine Learning and Big Data for Economists*
+
+
+ECON 435 *Principles of Big Data Management Systems*
+
+
+ECON 441C *Applied Data Management for Economists* 
+
+
+
