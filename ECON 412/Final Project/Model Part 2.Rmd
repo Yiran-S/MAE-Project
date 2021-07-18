@@ -1,0 +1,545 @@
+---
+title: "ExtraModel_yiran"
+author: 
+- LIU, YIPING
+- LATIFI, ROYA
+- SUN, YIRAN
+date: "`r format(Sys.Date(),'%b %d,%Y')`"
+output: 
+  rmarkdown::html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    theme: readable
+    df_print: paged
+---
+<style type="text/css">
+
+h1.title {
+  font-size: 38px;
+  color: Black;
+  text-align: center;
+}
+
+h4.author { /* Header 4 - and the author and data headers use this too  */
+  font-size: 20px;
+  color: Black;
+  text-align: center;
+}
+
+h4.date { /* Header 4 - and the author and data headers use this too  */
+  font-size: 18px;
+  color: Gray;
+  text-align: center;
+}
+
+body { 
+  font-size: 14pt;
+  lineheight: 14p;
+}
+
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(fastDummies)#create dummies
+library(e1071)#cv
+library(lares)
+library(dplyr)
+library(glmnet)
+library(plyr)
+
+library(reshape) #for heatmap
+library(glmnet)
+library(MASS)
+library(class)
+library(FNN)
+library(stats)
+library(fpc)
+library(e1071)
+
+library(corrplot)
+library(gmodels)
+library(dummies)
+library(neuralnet)
+library(nnet)
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+## load dataset
+da.train <- read.csv("train.csv")
+da.test <- read.csv("test.csv")
+dim(da.train)
+dim(da.test)
+
+all <- rbind(da.train,da.test) #combine train and test data 
+head(all)
+
+```
+
+#### Split training and testing dataset
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+
+set.seed(412)
+train.index <- sample(c(1:dim(all)[1]), dim(all)[1]*0.8)
+
+train.data <- all[train.index,]
+valid.data <- all[-train.index, ] 
+
+# check if training contains all the subject
+da.train <- train.data
+da.test <- valid.data
+
+da.train$Partition = "Train"
+da.test$Partition = "Test"
+
+ind.all = rbind(da.train,da.test) #create another dataset for independent variable visualization 
+# with test and train data partition
+ind.all$Partition = as.factor(ind.all$Partition)
+qplot(data = ind.all, x = subject, ylab="count",fill = Partition)
+
+```
+
+So train.data is our training data and valid.data is our testing data
+
+<br>
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412) 
+train.control <- trainControl(method = "cv", number = 5)
+
+# Train the model
+x.train <- train.data[,-563]
+y.train <- train.data$Activity
+x.valid <- valid.data[,-563]
+y.valid <- valid.data$Activity
+
+```
+
+# Logistic -- lasso
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412) 
+
+lambda_seq <- 10^seq(-3, 2, by = 0.1)
+
+X <- model.matrix(y.train ~ ., x.train)[,-1]
+X.test <- model.matrix(y.valid ~ ., x.valid)[,-1]
+
+lasso.model <- cv.glmnet(x=X, y=y.train,family = "multinomial",alpha = 1, 
+                      lambda = lambda_seq, nfolds = 5)
+
+lasso.model$lambda.min
+
+#Predict
+lasso.pred <- predict(lasso.model, X.test ,type='class',s=lasso.model$lambda.min)
+
+lasso.matrix <- confusionMatrix(as.factor(lasso.pred), as.factor(y.valid))
+
+
+print(lasso.matrix)
+```
+
+# Logistic -- Ridge
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412) 
+
+ridge.model <- cv.glmnet(x=X, y=y.train,family = "multinomial",alpha = 0, 
+                      lambda = lambda_seq, nfolds = 5)
+
+ridge.model$lambda.min
+
+#Predict
+ridge.pred <- predict(ridge.model, X.test, type='class',s=ridge.model$lambda.min)
+
+ridge.matrix <- confusionMatrix(as.factor(ridge.pred), as.factor(y.valid))
+
+print(ridge.matrix)
+
+```
+
+
+
+# Neural Networks--NN87 hidden = 6
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412)
+
+nn7 <- neuralnet((Activity == "LAYING") + (Activity == "SITTING")+ (Activity == "STANDING")+ (Activity == "WALKING") + (Activity == "WALKING_DOWNSTAIRS") + (Activity == "WALKING_UPSTAIRS") ~ tBodyAcc.mean...X + tBodyAcc.mean...Y + tBodyAcc.mean...Z + tBodyAcc.std...X + 
+    tBodyAcc.std...Y + tBodyAcc.std...Z + tBodyAcc.mad...X + 
+    tBodyAcc.mad...Y + tBodyAcc.mad...Z + tBodyAcc.max...X + 
+    tBodyAcc.max...Y + tBodyAcc.max...Z + tBodyAcc.min...X + 
+    tBodyAcc.min...Y + tBodyAcc.min...Z + tBodyAcc.sma.. + tBodyAcc.energy...X + 
+    tBodyAcc.energy...Y + tBodyAcc.energy...Z + tBodyAcc.iqr...X + 
+    tBodyAcc.iqr...Y + tBodyAcc.iqr...Z + tBodyAcc.entropy...X + 
+    tBodyAcc.entropy...Y + tBodyAcc.entropy...Z + tBodyAcc.arCoeff...X.1 + 
+    tBodyAcc.arCoeff...X.2 + tBodyAcc.arCoeff...X.3 + tBodyAcc.arCoeff...X.4 + 
+    tBodyAcc.arCoeff...Y.1 + tBodyAcc.arCoeff...Y.2 + tBodyAcc.arCoeff...Y.3 + 
+    tBodyAcc.arCoeff...Y.4 + tBodyAcc.arCoeff...Z.1 + tBodyAcc.arCoeff...Z.2 + 
+    tBodyAcc.arCoeff...Z.3 + tBodyAcc.arCoeff...Z.4 + tBodyAcc.correlation...X.Y + 
+    tBodyAcc.correlation...X.Z + tBodyAcc.correlation...Y.Z + 
+    tGravityAcc.mean...X + tGravityAcc.mean...Y + tGravityAcc.mean...Z + 
+    tGravityAcc.std...X + tGravityAcc.std...Y + tGravityAcc.std...Z + 
+    tGravityAcc.mad...X + tGravityAcc.mad...Y + tGravityAcc.mad...Z + 
+    tGravityAcc.max...X + tGravityAcc.max...Y + tGravityAcc.max...Z + 
+    tGravityAcc.min...X + tGravityAcc.min...Y + tGravityAcc.min...Z + 
+    tGravityAcc.sma.. + tGravityAcc.energy...X + tGravityAcc.energy...Y + 
+    tGravityAcc.energy...Z + tGravityAcc.iqr...X + tGravityAcc.iqr...Y + 
+    tGravityAcc.iqr...Z + tGravityAcc.entropy...X + tGravityAcc.entropy...Y + 
+    tGravityAcc.entropy...Z + tGravityAcc.arCoeff...X.1 + tGravityAcc.arCoeff...X.2 + 
+    tGravityAcc.arCoeff...X.3 + tGravityAcc.arCoeff...X.4 + tGravityAcc.arCoeff...Y.1 + 
+    tGravityAcc.arCoeff...Y.2 + tGravityAcc.arCoeff...Y.3 + tGravityAcc.arCoeff...Y.4 + 
+    tGravityAcc.arCoeff...Z.1 + tGravityAcc.arCoeff...Z.2 + tGravityAcc.arCoeff...Z.3 + 
+    tGravityAcc.arCoeff...Z.4 + tGravityAcc.correlation...X.Y + 
+    tGravityAcc.correlation...X.Z + tGravityAcc.correlation...Y.Z + 
+    tBodyAccJerk.mean...X + tBodyAccJerk.mean...Y + tBodyAccJerk.mean...Z + 
+    tBodyAccJerk.std...X + tBodyAccJerk.std...Y + tBodyAccJerk.std...Z + 
+    tBodyAccJerk.mad...X + tBodyAccJerk.mad...Y + tBodyAccJerk.mad...Z + 
+    tBodyAccJerk.max...X + tBodyAccJerk.max...Y + tBodyAccJerk.max...Z + 
+    tBodyAccJerk.min...X + tBodyAccJerk.min...Y + tBodyAccJerk.min...Z + 
+    tBodyAccJerk.sma.. + tBodyAccJerk.energy...X + tBodyAccJerk.energy...Y + 
+    tBodyAccJerk.energy...Z + tBodyAccJerk.iqr...X + tBodyAccJerk.iqr...Y + 
+    tBodyAccJerk.iqr...Z + tBodyAccJerk.entropy...X + tBodyAccJerk.entropy...Y + 
+    tBodyAccJerk.entropy...Z + tBodyAccJerk.arCoeff...X.1 + tBodyAccJerk.arCoeff...X.2 + 
+    tBodyAccJerk.arCoeff...X.3 + tBodyAccJerk.arCoeff...X.4 + 
+    tBodyAccJerk.arCoeff...Y.1 + tBodyAccJerk.arCoeff...Y.2 + 
+    tBodyAccJerk.arCoeff...Y.3 + tBodyAccJerk.arCoeff...Y.4 + tBodyAccJerk.arCoeff...Z.1 + tBodyAccJerk.arCoeff...Z.2 + 
+    tBodyAccJerk.arCoeff...Z.3 + tBodyAccJerk.arCoeff...Z.4 + 
+    tBodyAccJerk.correlation...X.Y + tBodyAccJerk.correlation...X.Z + 
+    tBodyAccJerk.correlation...Y.Z + tBodyGyro.mean...X + tBodyGyro.mean...Y + 
+    tBodyGyro.mean...Z + tBodyGyro.std...X + tBodyGyro.std...Y + 
+    tBodyGyro.std...Z + tBodyGyro.mad...X + tBodyGyro.mad...Y + 
+    tBodyGyro.mad...Z + tBodyGyro.max...X + tBodyGyro.max...Y + 
+    tBodyGyro.max...Z + tBodyGyro.min...X + tBodyGyro.min...Y + 
+    tBodyGyro.min...Z + tBodyGyro.sma.. + tBodyGyro.energy...X + 
+    tBodyGyro.energy...Y + tBodyGyro.energy...Z + tBodyGyro.iqr...X + 
+    tBodyGyro.iqr...Y + tBodyGyro.iqr...Z + tBodyGyro.entropy...X + 
+    tBodyGyro.entropy...Y + tBodyGyro.entropy...Z + tBodyGyro.arCoeff...X.1 + 
+    tBodyGyro.arCoeff...X.2 + tBodyGyro.arCoeff...X.3 + tBodyGyro.arCoeff...X.4 + 
+    tBodyGyro.arCoeff...Y.1 + tBodyGyro.arCoeff...Y.2 + tBodyGyro.arCoeff...Y.3 + 
+    tBodyGyro.arCoeff...Y.4 + tBodyGyro.arCoeff...Z.1 + tBodyGyro.arCoeff...Z.2 + 
+    tBodyGyro.arCoeff...Z.3 + tBodyGyro.arCoeff...Z.4 + tBodyGyro.correlation...X.Y + 
+    tBodyGyro.correlation...X.Z + tBodyGyro.correlation...Y.Z + 
+    tBodyGyroJerk.mean...X + tBodyGyroJerk.mean...Y + tBodyGyroJerk.mean...Z + 
+    tBodyGyroJerk.std...X + tBodyGyroJerk.std...Y + tBodyGyroJerk.std...Z + 
+    tBodyGyroJerk.mad...X + tBodyGyroJerk.mad...Y + tBodyGyroJerk.mad...Z + 
+    tBodyGyroJerk.max...X + tBodyGyroJerk.max...Y + tBodyGyroJerk.max...Z + 
+    tBodyGyroJerk.min...X + tBodyGyroJerk.min...Y + tBodyGyroJerk.min...Z + 
+    tBodyGyroJerk.sma.. + tBodyGyroJerk.energy...X + tBodyGyroJerk.energy...Y + 
+    tBodyGyroJerk.energy...Z + tBodyGyroJerk.iqr...X + tBodyGyroJerk.iqr...Y + 
+    tBodyGyroJerk.iqr...Z + tBodyGyroJerk.entropy...X + tBodyGyroJerk.entropy...Y + 
+    tBodyGyroJerk.entropy...Z + tBodyGyroJerk.arCoeff...X.1 + 
+    tBodyGyroJerk.arCoeff...X.2 + tBodyGyroJerk.arCoeff...X.3 + 
+    tBodyGyroJerk.arCoeff...X.4 + tBodyGyroJerk.arCoeff...Y.1 + 
+    tBodyGyroJerk.arCoeff...Y.2 + tBodyGyroJerk.arCoeff...Y.3 + 
+    tBodyGyroJerk.arCoeff...Y.4 + tBodyGyroJerk.arCoeff...Z.1 + 
+    tBodyGyroJerk.arCoeff...Z.2 + tBodyGyroJerk.arCoeff...Z.3 + 
+    tBodyGyroJerk.arCoeff...Z.4 + tBodyGyroJerk.correlation...X.Y + 
+    tBodyGyroJerk.correlation...X.Z + tBodyGyroJerk.correlation...Y.Z + 
+    tBodyAccMag.mean.. + tBodyAccMag.std.. + tBodyAccMag.mad.. + 
+    tBodyAccMag.max.. + tBodyAccMag.min.. + tBodyAccMag.sma.. + 
+    tBodyAccMag.energy.. + tBodyAccMag.iqr.. + tBodyAccMag.entropy.. + 
+    tBodyAccMag.arCoeff..1 + tBodyAccMag.arCoeff..2 + tBodyAccMag.arCoeff..3 + 
+    tBodyAccMag.arCoeff..4 + tGravityAccMag.mean.. + tGravityAccMag.std.. + 
+    tGravityAccMag.mad.. + tGravityAccMag.max.. + tGravityAccMag.min.. + 
+    tGravityAccMag.sma.. + tGravityAccMag.energy.. + tGravityAccMag.iqr.. + 
+    tGravityAccMag.entropy.. + tGravityAccMag.arCoeff..1 + tGravityAccMag.arCoeff..2 + 
+    tGravityAccMag.arCoeff..3 + tGravityAccMag.arCoeff..4 + tBodyAccJerkMag.mean.. + 
+    tBodyAccJerkMag.std.. + tBodyAccJerkMag.mad.. + tBodyAccJerkMag.max.. + 
+    tBodyAccJerkMag.min.. + tBodyAccJerkMag.sma.. + tBodyAccJerkMag.energy.. + 
+    tBodyAccJerkMag.iqr.. + tBodyAccJerkMag.entropy.. + tBodyAccJerkMag.arCoeff..1 + 
+    tBodyAccJerkMag.arCoeff..2 + tBodyAccJerkMag.arCoeff..3 + 
+    tBodyAccJerkMag.arCoeff..4 + tBodyGyroMag.mean.. + tBodyGyroMag.std.. + 
+    tBodyGyroMag.mad.. + tBodyGyroMag.max.. + tBodyGyroMag.min.. + 
+    tBodyGyroMag.sma.. + tBodyGyroMag.energy.. + tBodyGyroMag.iqr.. + 
+    tBodyGyroMag.entropy.. + tBodyGyroMag.arCoeff..1 + tBodyGyroMag.arCoeff..2 + 
+    tBodyGyroMag.arCoeff..3 + tBodyGyroMag.arCoeff..4 + tBodyGyroJerkMag.mean.. + 
+    tBodyGyroJerkMag.std.. + tBodyGyroJerkMag.mad.. + tBodyGyroJerkMag.max.. + 
+    tBodyGyroJerkMag.min.. + tBodyGyroJerkMag.sma.. + tBodyGyroJerkMag.energy.. + 
+    tBodyGyroJerkMag.iqr.. + tBodyGyroJerkMag.entropy.. + tBodyGyroJerkMag.arCoeff..1 + 
+    tBodyGyroJerkMag.arCoeff..2 + tBodyGyroJerkMag.arCoeff..3 +tBodyGyroJerkMag.arCoeff..4 + fBodyAcc.mean...X + fBodyAcc.mean...Y + 
+    fBodyAcc.mean...Z + fBodyAcc.std...X + fBodyAcc.std...Y + 
+    fBodyAcc.std...Z + fBodyAcc.mad...X + fBodyAcc.mad...Y + 
+    fBodyAcc.mad...Z + fBodyAcc.max...X + fBodyAcc.max...Y + 
+    fBodyAcc.max...Z + fBodyAcc.min...X + fBodyAcc.min...Y + 
+    fBodyAcc.min...Z + fBodyAcc.sma.. + fBodyAcc.energy...X + 
+    fBodyAcc.energy...Y + fBodyAcc.energy...Z + fBodyAcc.iqr...X + 
+    fBodyAcc.iqr...Y + fBodyAcc.iqr...Z + fBodyAcc.entropy...X + 
+    fBodyAcc.entropy...Y + fBodyAcc.entropy...Z + fBodyAcc.maxInds.X + 
+    fBodyAcc.maxInds.Y + fBodyAcc.maxInds.Z + fBodyAcc.meanFreq...X + 
+    fBodyAcc.meanFreq...Y + fBodyAcc.meanFreq...Z + fBodyAcc.skewness...X + 
+    fBodyAcc.kurtosis...X + fBodyAcc.skewness...Y + fBodyAcc.kurtosis...Y + 
+    fBodyAcc.skewness...Z + fBodyAcc.kurtosis...Z + fBodyAcc.bandsEnergy...1.8 + 
+    fBodyAcc.bandsEnergy...9.16 + fBodyAcc.bandsEnergy...17.24 + 
+    fBodyAcc.bandsEnergy...25.32 + fBodyAcc.bandsEnergy...33.40 + 
+    fBodyAcc.bandsEnergy...41.48 + fBodyAcc.bandsEnergy...49.56 + 
+    fBodyAcc.bandsEnergy...57.64 + fBodyAcc.bandsEnergy...1.16 + 
+    fBodyAcc.bandsEnergy...17.32 + fBodyAcc.bandsEnergy...33.48 + 
+    fBodyAcc.bandsEnergy...49.64 + fBodyAcc.bandsEnergy...1.24 + 
+    fBodyAcc.bandsEnergy...25.48 + fBodyAcc.bandsEnergy...1.8.1 + 
+    fBodyAcc.bandsEnergy...9.16.1 + fBodyAcc.bandsEnergy...17.24.1 + 
+    fBodyAcc.bandsEnergy...25.32.1 + fBodyAcc.bandsEnergy...33.40.1 + 
+    fBodyAcc.bandsEnergy...41.48.1 + fBodyAcc.bandsEnergy...49.56.1 + 
+    fBodyAcc.bandsEnergy...57.64.1 + fBodyAcc.bandsEnergy...1.16.1 + 
+    fBodyAcc.bandsEnergy...17.32.1 + fBodyAcc.bandsEnergy...33.48.1 + 
+    fBodyAcc.bandsEnergy...49.64.1 + fBodyAcc.bandsEnergy...1.24.1 + 
+    fBodyAcc.bandsEnergy...25.48.1 + fBodyAcc.bandsEnergy...1.8.2 + 
+    fBodyAcc.bandsEnergy...9.16.2 + fBodyAcc.bandsEnergy...17.24.2 + 
+    fBodyAcc.bandsEnergy...25.32.2 + fBodyAcc.bandsEnergy...33.40.2 + 
+    fBodyAcc.bandsEnergy...41.48.2 + fBodyAcc.bandsEnergy...49.56.2 + 
+    fBodyAcc.bandsEnergy...57.64.2 + fBodyAcc.bandsEnergy...1.16.2 + 
+    fBodyAcc.bandsEnergy...17.32.2 + fBodyAcc.bandsEnergy...33.48.2 + 
+    fBodyAcc.bandsEnergy...49.64.2 + fBodyAcc.bandsEnergy...1.24.2 + 
+    fBodyAcc.bandsEnergy...25.48.2 + fBodyAccJerk.mean...X + 
+    fBodyAccJerk.mean...Y + fBodyAccJerk.mean...Z + fBodyAccJerk.std...X + 
+    fBodyAccJerk.std...Y + fBodyAccJerk.std...Z + fBodyAccJerk.mad...X + 
+    fBodyAccJerk.mad...Y + fBodyAccJerk.mad...Z + fBodyAccJerk.max...X + 
+    fBodyAccJerk.max...Y + fBodyAccJerk.max...Z + fBodyAccJerk.min...X + 
+    fBodyAccJerk.min...Y + fBodyAccJerk.min...Z + fBodyAccJerk.sma.. + 
+    fBodyAccJerk.energy...X + fBodyAccJerk.energy...Y + fBodyAccJerk.energy...Z + 
+    fBodyAccJerk.iqr...X + fBodyAccJerk.iqr...Y + fBodyAccJerk.iqr...Z + 
+    fBodyAccJerk.entropy...X + fBodyAccJerk.entropy...Y + fBodyAccJerk.entropy...Z + 
+    fBodyAccJerk.maxInds.X + fBodyAccJerk.maxInds.Y + fBodyAccJerk.maxInds.Z + 
+    fBodyAccJerk.meanFreq...X + fBodyAccJerk.meanFreq...Y + fBodyAccJerk.meanFreq...Z + 
+    fBodyAccJerk.skewness...X + fBodyAccJerk.kurtosis...X + fBodyAccJerk.skewness...Y + 
+    fBodyAccJerk.kurtosis...Y + fBodyAccJerk.skewness...Z + fBodyAccJerk.kurtosis...Z + 
+    fBodyAccJerk.bandsEnergy...1.8 + fBodyAccJerk.bandsEnergy...9.16 + 
+    fBodyAccJerk.bandsEnergy...17.24 + fBodyAccJerk.bandsEnergy...25.32 + 
+    fBodyAccJerk.bandsEnergy...33.40 + fBodyAccJerk.bandsEnergy...41.48 + 
+    fBodyAccJerk.bandsEnergy...49.56 + fBodyAccJerk.bandsEnergy...57.64 + 
+    fBodyAccJerk.bandsEnergy...1.16 + fBodyAccJerk.bandsEnergy...17.32 + 
+    fBodyAccJerk.bandsEnergy...33.48 + fBodyAccJerk.bandsEnergy...49.64 + 
+    fBodyAccJerk.bandsEnergy...1.24 + fBodyAccJerk.bandsEnergy...25.48 + 
+    fBodyAccJerk.bandsEnergy...1.8.1 + fBodyAccJerk.bandsEnergy...9.16.1 + 
+    fBodyAccJerk.bandsEnergy...17.24.1 + fBodyAccJerk.bandsEnergy...25.32.1 + 
+    fBodyAccJerk.bandsEnergy...33.40.1 + fBodyAccJerk.bandsEnergy...41.48.1 +fBodyAccJerk.bandsEnergy...49.56.1 + fBodyAccJerk.bandsEnergy...57.64.1 + 
+    fBodyAccJerk.bandsEnergy...1.16.1 + fBodyAccJerk.bandsEnergy...17.32.1 + 
+    fBodyAccJerk.bandsEnergy...33.48.1 + fBodyAccJerk.bandsEnergy...49.64.1 + 
+    fBodyAccJerk.bandsEnergy...1.24.1 + fBodyAccJerk.bandsEnergy...25.48.1 + 
+    fBodyAccJerk.bandsEnergy...1.8.2 + fBodyAccJerk.bandsEnergy...9.16.2 + 
+    fBodyAccJerk.bandsEnergy...17.24.2 + fBodyAccJerk.bandsEnergy...25.32.2 + 
+    fBodyAccJerk.bandsEnergy...33.40.2 + fBodyAccJerk.bandsEnergy...41.48.2 + 
+    fBodyAccJerk.bandsEnergy...49.56.2 + fBodyAccJerk.bandsEnergy...57.64.2 + 
+    fBodyAccJerk.bandsEnergy...1.16.2 + fBodyAccJerk.bandsEnergy...17.32.2 + 
+    fBodyAccJerk.bandsEnergy...33.48.2 + fBodyAccJerk.bandsEnergy...49.64.2 + 
+    fBodyAccJerk.bandsEnergy...1.24.2 + fBodyAccJerk.bandsEnergy...25.48.2 + 
+    fBodyGyro.mean...X + fBodyGyro.mean...Y + fBodyGyro.mean...Z + 
+    fBodyGyro.std...X + fBodyGyro.std...Y + fBodyGyro.std...Z + 
+    fBodyGyro.mad...X + fBodyGyro.mad...Y + fBodyGyro.mad...Z + 
+    fBodyGyro.max...X + fBodyGyro.max...Y + fBodyGyro.max...Z + 
+    fBodyGyro.min...X + fBodyGyro.min...Y + fBodyGyro.min...Z + 
+    fBodyGyro.sma.. + fBodyGyro.energy...X + fBodyGyro.energy...Y + 
+    fBodyGyro.energy...Z + fBodyGyro.iqr...X + fBodyGyro.iqr...Y + 
+    fBodyGyro.iqr...Z + fBodyGyro.entropy...X + fBodyGyro.entropy...Y + 
+    fBodyGyro.entropy...Z + fBodyGyro.maxInds.X + fBodyGyro.maxInds.Y + 
+    fBodyGyro.maxInds.Z + fBodyGyro.meanFreq...X + fBodyGyro.meanFreq...Y + 
+    fBodyGyro.meanFreq...Z + fBodyGyro.skewness...X + fBodyGyro.kurtosis...X + 
+    fBodyGyro.skewness...Y + fBodyGyro.kurtosis...Y + fBodyGyro.skewness...Z + 
+    fBodyGyro.kurtosis...Z + fBodyGyro.bandsEnergy...1.8 + fBodyGyro.bandsEnergy...9.16 + 
+    fBodyGyro.bandsEnergy...17.24 + fBodyGyro.bandsEnergy...25.32 + 
+    fBodyGyro.bandsEnergy...33.40 + fBodyGyro.bandsEnergy...41.48 + 
+    fBodyGyro.bandsEnergy...49.56 + fBodyGyro.bandsEnergy...57.64 + 
+    fBodyGyro.bandsEnergy...1.16 + fBodyGyro.bandsEnergy...17.32 + 
+    fBodyGyro.bandsEnergy...33.48 + fBodyGyro.bandsEnergy...49.64 + 
+    fBodyGyro.bandsEnergy...1.24 + fBodyGyro.bandsEnergy...25.48 + 
+    fBodyGyro.bandsEnergy...1.8.1 + fBodyGyro.bandsEnergy...9.16.1 + 
+    fBodyGyro.bandsEnergy...17.24.1 + fBodyGyro.bandsEnergy...25.32.1 + 
+    fBodyGyro.bandsEnergy...33.40.1 + fBodyGyro.bandsEnergy...41.48.1 + 
+    fBodyGyro.bandsEnergy...49.56.1 + fBodyGyro.bandsEnergy...57.64.1 + 
+    fBodyGyro.bandsEnergy...1.16.1 + fBodyGyro.bandsEnergy...17.32.1 + 
+    fBodyGyro.bandsEnergy...33.48.1 + fBodyGyro.bandsEnergy...49.64.1 + 
+    fBodyGyro.bandsEnergy...1.24.1 + fBodyGyro.bandsEnergy...25.48.1 + 
+    fBodyGyro.bandsEnergy...1.8.2 + fBodyGyro.bandsEnergy...9.16.2 + 
+    fBodyGyro.bandsEnergy...17.24.2 + fBodyGyro.bandsEnergy...25.32.2 + 
+    fBodyGyro.bandsEnergy...33.40.2 + fBodyGyro.bandsEnergy...41.48.2 + 
+    fBodyGyro.bandsEnergy...49.56.2 + fBodyGyro.bandsEnergy...57.64.2 + 
+    fBodyGyro.bandsEnergy...1.16.2 + fBodyGyro.bandsEnergy...17.32.2 + 
+    fBodyGyro.bandsEnergy...33.48.2 + fBodyGyro.bandsEnergy...49.64.2 + 
+    fBodyGyro.bandsEnergy...1.24.2 + fBodyGyro.bandsEnergy...25.48.2 + 
+    fBodyAccMag.mean.. + fBodyAccMag.std.. + fBodyAccMag.mad.. + 
+    fBodyAccMag.max.. + fBodyAccMag.min.. + fBodyAccMag.sma.. + 
+    fBodyAccMag.energy.. + fBodyAccMag.iqr.. + fBodyAccMag.entropy.. + 
+    fBodyAccMag.maxInds + fBodyAccMag.meanFreq.. + fBodyAccMag.skewness.. + 
+    fBodyAccMag.kurtosis.. + fBodyBodyAccJerkMag.mean.. + fBodyBodyAccJerkMag.std.. + 
+    fBodyBodyAccJerkMag.mad.. + fBodyBodyAccJerkMag.max.. + fBodyBodyAccJerkMag.min.. + 
+    fBodyBodyAccJerkMag.sma.. + fBodyBodyAccJerkMag.energy.. + 
+    fBodyBodyAccJerkMag.iqr.. + fBodyBodyAccJerkMag.entropy.. + 
+    fBodyBodyAccJerkMag.maxInds + fBodyBodyAccJerkMag.meanFreq.. + 
+    fBodyBodyAccJerkMag.skewness.. + fBodyBodyAccJerkMag.kurtosis.. + fBodyBodyGyroMag.mean.. + fBodyBodyGyroMag.std.. + fBodyBodyGyroMag.mad.. + 
+    fBodyBodyGyroMag.max.. + fBodyBodyGyroMag.min.. + fBodyBodyGyroMag.sma.. + 
+    fBodyBodyGyroMag.energy.. + fBodyBodyGyroMag.iqr.. + fBodyBodyGyroMag.entropy.. + 
+    fBodyBodyGyroMag.maxInds + fBodyBodyGyroMag.meanFreq.. + 
+    fBodyBodyGyroMag.skewness.. + fBodyBodyGyroMag.kurtosis.. + 
+    fBodyBodyGyroJerkMag.mean.. + fBodyBodyGyroJerkMag.std.. + 
+    fBodyBodyGyroJerkMag.mad.. + fBodyBodyGyroJerkMag.max.. + 
+    fBodyBodyGyroJerkMag.min.. + fBodyBodyGyroJerkMag.sma.. + 
+    fBodyBodyGyroJerkMag.energy.. + fBodyBodyGyroJerkMag.iqr.. + 
+    fBodyBodyGyroJerkMag.entropy.. + fBodyBodyGyroJerkMag.maxInds + 
+    fBodyBodyGyroJerkMag.meanFreq.. + fBodyBodyGyroJerkMag.skewness.. + 
+    fBodyBodyGyroJerkMag.kurtosis.. + angle.tBodyAccMean.gravity. + 
+    angle.tBodyAccJerkMean..gravityMean. + angle.tBodyGyroMean.gravityMean. + 
+    angle.tBodyGyroJerkMean.gravityMean. + angle.X.gravityMean. + 
+    angle.Y.gravityMean. + angle.Z.gravityMean. + subject
+  , train.data,  hidden = 6, linear.output = FALSE, threshold=0.3)
+
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Accuracy (testing set)
+valid.data3 <- valid.data
+validation.prediction <- compute(nn7, valid.data3[,1:562])
+validation.class <- apply(validation.prediction$net.result,1,which.max)-1
+
+
+revalue(valid.data3$Activity, c("LAYING" = 0)) -> valid.data3$Activity
+revalue(valid.data3$Activity, c("SITTING" = 1)) -> valid.data3$Activity
+revalue(valid.data3$Activity, c("STANDING" = 2)) -> valid.data3$Activity
+revalue(valid.data3$Activity, c("WALKING" = 3)) -> valid.data3$Activity
+revalue(valid.data3$Activity, c("WALKING_DOWNSTAIRS" = 4)) -> valid.data3$Activity
+revalue(valid.data3$Activity, c("WALKING_UPSTAIRS" = 5)) -> valid.data3$Activity
+
+
+nn.matrix <- confusionMatrix(as.factor(validation.class), as.factor(valid.data3$Activity))
+print(nn.matrix)
+```
+
+
+<br><br>
+
+# After PCA Regularization
+
+## Choose the number of components
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Applying Principal Component Analysis to reduce number of dimensions
+
+pc <- prcomp(x.train, center=TRUE, scale=TRUE)
+pc.var <- pc$sdev^2
+pc.pvar <- pc.var/sum(pc.var)
+
+# Plotting Cumulative proportions of Principal Components to decide number of components 
+plot(cumsum(pc.pvar),xlab="Principal component", 
+     ylab="Cumulative Proportion of variance explained",
+     type='b',main="Principal Components proportions",col="deepskyblue3")
+points(x=100, y=cumsum(pc.pvar)[100],type="p", pch=21,cex=1.5,bg="black",col="black")
+text(200,0.9,"Num of Comp=100, Var=0.946")
+
+```
+
+
+We would select 100 components.
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+pca.x.train = data.frame(pc$x)
+pca.x.train = pca.x.train[,1:100]
+
+pca.x.valid <- predict(pc, newdata = x.valid)
+pca.x.valid <- as.data.frame(pca.x.valid)[,1:100]
+
+```
+
+<br>
+
+## Logistic with PCA preprocessing
+
+### Lasso
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412) 
+
+lambda_seq <- 10^seq(-3, 2, by = 0.1)
+
+X.pca <- model.matrix(y.train ~ ., pca.x.train)[,-1]
+X.pca.test <- model.matrix(y.valid ~ ., pca.x.valid)[,-1]
+
+lasso.pca.model <- cv.glmnet(x=X.pca, y=y.train,family = "multinomial",alpha = 1, 
+                      lambda = lambda_seq, nfolds = 5)
+
+lasso.pca.model$lambda.min
+
+#Predict
+lasso.pca.pred <- predict(lasso.pca.model, X.pca.test ,type='class',
+                          s=lasso.pca.model$lambda.min)
+
+lasso.pca.matrix <- confusionMatrix(as.factor(lasso.pca.pred), as.factor(y.valid))
+
+print(lasso.pca.matrix)
+```
+
+### Ridge
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412) 
+
+ridge.pca.model <- cv.glmnet(x=X.pca, y=y.train,family = "multinomial",alpha = 0, 
+                      lambda = lambda_seq, nfolds = 5)
+
+#Predict
+ridge.pca.pred <- predict(ridge.pca.model,  X.pca.test,type='class',
+                          s=ridge.pca.model$lambda.min)
+
+ridge.pca.matrix <- confusionMatrix(as.factor(ridge.pca.pred), as.factor(y.valid))
+
+print(ridge.pca.matrix)
+
+```
+
+<br>
+
+
+
+## Neural Networks with PCA preprocessing
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+pca.train = cbind(pca.x.train,y.train)
+pca.valid <- cbind(pca.x.valid, y.valid)
+
+```
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+set.seed(412)
+
+nn7.pca <- neuralnet((y.train== "LAYING") + (y.train == "SITTING")+ (y.train == "STANDING")+ (y.train == "WALKING") + (y.train == "WALKING_DOWNSTAIRS") + (y.train == "WALKING_UPSTAIRS") ~ PC1 + PC2 + PC3 +PC4 +PC5 +PC6 + PC7 +PC8 +PC9 + 
+                   PC10 + PC11 + PC12 + PC13 +PC14 +PC15 +PC16 + PC17 +PC18 +PC19+
+                   PC20 + PC21 + PC22 + PC23 +PC24 +PC25 +PC26 + PC27 +PC28 +PC29+
+                   PC30 + PC31 + PC32 + PC33 +PC34 +PC35 +PC36 + PC37 +PC38 +PC39+
+                   PC40 + PC41 + PC42 + PC43 +PC44 +PC45 +PC46 + PC47 +PC48 +PC49+
+                   PC50 + PC51 + PC52 + PC53 +PC54 +PC55 +PC56 + PC57 +PC58 +PC59+
+                   PC60 + PC61 + PC62 + PC63 +PC64 +PC65 +PC66 + PC67 +PC68 +PC69+
+                   PC70 + PC71 + PC72 + PC73 +PC74 +PC75 +PC76 + PC77 +PC78 +PC79+
+                   PC80 + PC81 + PC82 + PC83 +PC84 +PC85 +PC86 + PC87 +PC88 +PC89+
+                   PC90 + PC91 + PC92 + PC93 +PC94 +PC95 +PC96 + PC97 +PC98 +PC99+PC100, 
+                 pca.train,  hidden = 6, linear.output = FALSE, threshold=0.3)
+
+```
+
+
+```{r,include= TRUE, echo =TRUE, warning = FALSE,message = FALSE}
+# Accuracy (testing set)
+pca.valid.data3 <- pca.valid
+pca.valid.prediction <- compute(nn7.pca, pca.valid.data3[,1:100])
+pca.valid.class <- apply(pca.valid.prediction$net.result,1,which.max)-1
+
+
+revalue(pca.valid.data3$y.valid, c("LAYING" = 0)) -> pca.valid.data3$y.valid
+revalue(pca.valid.data3$y.valid, c("SITTING" = 1)) -> pca.valid.data3$y.valid
+revalue(pca.valid.data3$y.valid, c("STANDING" = 2)) -> pca.valid.data3$y.valid
+revalue(pca.valid.data3$y.valid, c("WALKING" = 3)) -> pca.valid.data3$y.valid
+revalue(pca.valid.data3$y.valid, c("WALKING_DOWNSTAIRS" = 4)) -> pca.valid.data3$y.valid
+revalue(pca.valid.data3$y.valid, c("WALKING_UPSTAIRS" = 5)) -> pca.valid.data3$y.valid
+
+
+nn.pca.matrix <- confusionMatrix(as.factor(pca.valid.class), as.factor(pca.valid.data3$y.valid))
+print(nn.pca.matrix)
+```
+
+
+
+
